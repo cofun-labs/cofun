@@ -17,7 +17,7 @@ Key constraints:
 | --- | --- | --- | --- |
 | UC-NOTICO-NOTION-013-S01 | P0 | ✅ | Given a question that inserted, replaced, and deleted pieces of a page; when the user undoes it from its reply and agrees; then the page has its content as before the question, and the reply says it was undone. |
 | UC-NOTICO-NOTION-013-S02 | P0 | ✅ | Given a question that created a page and a database row and changed titles, icons, and row values; when the user undoes it; then the page and the row are in Notion's trash, and the titles, icons, and values are as before. |
-| UC-NOTICO-NOTION-013-S03 | P0 | ✅ | Given a question whose changes were changed again since, by the user or a later question; when the user undoes it; then nothing changes, and the user is told which page changed and pointed to Notion's page history. |
+| UC-NOTICO-NOTION-013-S03 | P0 | ✅ | Given a question whose changes were changed again since, by the user or a later question, or can't be read in the current tab; when the user undoes it; then nothing changes, and the user is told which page changed (and pointed to Notion's page history) or can't be read. |
 | UC-NOTICO-NOTION-013-S04 | P1 | ✅ | Given the user asks the AI to undo its last change; then the AI shows what the latest question that changed Notion did and asks once, and on yes undoes it; on no nothing changes. |
 | UC-NOTICO-NOTION-013-S05 | P1 | ✅ | Given a question that also added a comment or moved a page; when the user undoes it; then what will be undone names what won't be, and the rest is undone. |
 | UC-NOTICO-NOTION-013-S06 | P1 | ✅ | Given Notion doesn't say whether an undo was saved; then it is not tried again, and the user is told it may or may not have been undone and to check the pages. |

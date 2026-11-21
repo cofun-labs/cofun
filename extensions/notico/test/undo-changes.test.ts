@@ -184,8 +184,8 @@ describe('UC-NOTICO-NOTION-013 undo what a question changed', () => {
     ws.records.delete(PAGE)
     const transactions = ws.transactions.length
     expect((await failure(chat.run(undoChangesTool, {}))).message).toBe(
-      "Nothing was undone: “Fixture page” can't be read with the Notion account of this tab. Open Notion signed " +
-        'in to the account the changes were made with, and undo again.',
+      "Nothing was undone: “Fixture page” can't be read in this tab: it may have been deleted for good, or belong " +
+        'to another Notion account than the one signed in here.',
     )
     expect(ws.transactions).toHaveLength(transactions)
   })

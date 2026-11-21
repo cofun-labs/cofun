@@ -341,8 +341,8 @@ export function planUndo(q: QuestionChanges, current: RecordMap, userId: string 
   }
   if (unread.size)
     throw new UndoError(
-      `Nothing was undone: ${[...unread].map((p) => named(q, p)).join(', ')} can't be read with the Notion account ` +
-        'of this tab. Open Notion signed in to the account the changes were made with, and undo again.',
+      `Nothing was undone: ${[...unread].map((p) => named(q, p)).join(', ')} can't be read in this tab: it may have ` +
+        'been deleted for good, or belong to another Notion account than the one signed in here.',
     )
   if (changed.size)
     throw new UndoError(
