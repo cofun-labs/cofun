@@ -61,7 +61,7 @@ Notico is an independent project, not made or endorsed by Notion.
 |---|---|
 | Category | Productivity → Workflow & Planning |
 | Language | English |
-| Homepage URL | https://cofun.cc |
+| Homepage URL | https://cofun.cc/notico |
 | Support URL | https://github.com/cofun-labs/cofun/issues |
 
 ## Images
