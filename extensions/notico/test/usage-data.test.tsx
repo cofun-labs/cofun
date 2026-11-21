@@ -5,8 +5,8 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { pageTab, PAGE_URL } from './notion-tab'
-import { closeBrowser, FakeBrowser, START } from './panel'
-import type { SentEvent } from './posthog'
+import { closeBrowser, FakeBrowser, START } from './browser'
+import type { SentEvent } from '@cofun/panel-test/posthog'
 
 afterEach(closeBrowser)
 

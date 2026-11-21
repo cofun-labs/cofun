@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { usageCosting } from '../../../worker/test/fakes'
 import { DATA_LINE } from '@cofun/tools'
 import { FakeTab } from './tab'
-import { closeBrowser, FakeBrowser } from './panel'
+import { closeBrowser, FakeBrowser } from './browser'
 
 afterEach(closeBrowser)
 

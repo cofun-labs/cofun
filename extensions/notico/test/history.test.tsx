@@ -8,7 +8,7 @@ import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { usageCosting } from '../../../worker/test/fakes'
 import { pageTab } from './notion-tab'
-import { closeBrowser, FakeBrowser, START } from './panel'
+import { closeBrowser, FakeBrowser, START } from './browser'
 
 afterEach(closeBrowser)
 

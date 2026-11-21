@@ -6,7 +6,7 @@ import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE } from './notion-tab'
-import { closeBrowser, FakeBrowser, START } from './panel'
+import { closeBrowser, FakeBrowser, START } from './browser'
 
 afterEach(async () => {
   await closeBrowser()

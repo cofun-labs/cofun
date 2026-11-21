@@ -5,7 +5,7 @@ import '@testing-library/jest-dom/vitest'
 import { act, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { FakeTab } from './tab'
-import { closeBrowser, FakeBrowser } from './panel'
+import { closeBrowser, FakeBrowser } from './browser'
 
 afterEach(closeBrowser)
 

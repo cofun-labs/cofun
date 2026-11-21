@@ -4,7 +4,7 @@ import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { DATA_LINE } from '@cofun/tools'
 import { followConfluencePage } from './confluence-fixture'
-import { closeBrowser, FakeBrowser } from './panel'
+import { closeBrowser, FakeBrowser } from './browser'
 import { FakeTab, webPage } from './tab'
 
 const BASE = 'https://wiki.example.com/confluence'

@@ -6,8 +6,8 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { pageTab, type FakeNotionTab } from './notion-tab'
-import { listed } from './openrouter'
-import { closeBrowser, FakeBrowser } from './panel'
+import { listed } from '@cofun/panel-test/openrouter'
+import { closeBrowser, FakeBrowser } from './browser'
 
 afterEach(closeBrowser)
 

@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { usageCosting } from '../../../worker/test/fakes'
 import { refunded } from '../../../worker/test/stripe'
 import { pageTab } from './notion-tab'
-import { closeBrowser, FakeBrowser } from './panel'
+import { closeBrowser, FakeBrowser } from './browser'
 
 afterEach(closeBrowser)
 

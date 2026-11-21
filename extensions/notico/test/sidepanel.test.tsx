@@ -7,7 +7,7 @@ import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DATA_LINE } from '@cofun/tools'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, fixture, pageTab } from './notion-tab'
-import { closeBrowser, FakeBrowser, START } from './panel'
+import { closeBrowser, FakeBrowser, START } from './browser'
 
 afterEach(closeBrowser)
 
