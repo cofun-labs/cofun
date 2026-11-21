@@ -223,7 +223,8 @@ describe('reading a long page in parts', () => {
     })
     await ask(user, 'Read all of it')
 
-    expect(await screen.findByText('Enough.')).toBeVisible()
+    // Seven parts of a long page, read one by one: longer than the default wait on a busy machine.
+    expect(await screen.findByText('Enough.', {}, { timeout: 4000 })).toBeVisible()
     expect(toolResults(browser).filter((r) => r.includes('\n[Part '))).toHaveLength(7)
   })
 })
