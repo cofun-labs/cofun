@@ -258,7 +258,7 @@ export function tabTools<M>({ product, addedTabs, ownSite, beforeCurrentTab }: T
       'its first part comes with an id that read_result and search_result take.',
     describe: (_args, details) => on(READ, details?.name, 'the current tab'),
     args: z.strictObject({}),
-    run: async (_args, _signal, context: ToolContext<M>) => {
+    run: async (_args, signal, context: ToolContext<M>) => {
       await beforeCurrentTab?.(context.memory)
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
       if (tab?.id === undefined || !tab.url) throw new Error('Could not tell which tab is the current one.')
@@ -276,7 +276,7 @@ export function tabTools<M>({ product, addedTabs, ownSite, beforeCurrentTab }: T
           `The current tab changed while ${product} waited (the user switched tabs or went to another page), so ` +
             'nothing was read. Ask them to go back to the page and ask again.',
         )
-      const read = await readTabContent(tab.id, site.origin, tab.url, product, 'the current tab')
+      const read = await readTabContent(tab.id, site.origin, tab.url, product, 'the current tab', signal)
       const header = `${'video' in read ? 'Video' : 'Page'} in the current tab, on ${host}`
       return contentRead(read, header, host, context, 'read_current_tab')
     },
@@ -295,7 +295,7 @@ export function tabTools<M>({ product, addedTabs, ownSite, beforeCurrentTab }: T
     args: z.strictObject({
       tab: z.number().int().describe('The number of the tab, as the note gave it.'),
     }),
-    run: async ({ tab }, _signal, context: ToolContext<M>) => {
+    run: async ({ tab }, signal, context: ToolContext<M>) => {
       const added = addedTabs(context.memory).get(tab)
       if (!added)
         throw new Error(
@@ -313,7 +313,7 @@ export function tabTools<M>({ product, addedTabs, ownSite, beforeCurrentTab }: T
       const site = readableSite(now.url, product, WHERE)
       if ('reason' in site) throw new Error(site.reason)
       await mayReadOrAsk(site.origin, context.ask, product)
-      const read = await readTabContent(tab, site.origin, now.url, product, WHERE)
+      const read = await readTabContent(tab, site.origin, now.url, product, WHERE, signal)
       const host = new URL(site.origin).host
       // The model reads the tab, not the address: it is told when the tab went to another page.
       const moved =
@@ -358,11 +358,12 @@ async function readTabContent(
   url: string,
   product: string,
   where: TabWhere,
+  signal?: AbortSignal,
 ): Promise<TabVideo | { page: TabPage; note?: string }> {
   const id = videoIdOf(url)
   let note: string | undefined
   if (id) {
-    const read = await readVideo(tabId, origin, id, product, where)
+    const read = await readVideo(tabId, origin, id, product, where, signal)
     if ('reason' in read) {
       if (read.stops) throw new ToolError(read.stops.code, read.reason, { stopsQuestion: read.stops.message })
       throw new Error(read.reason)
@@ -371,6 +372,8 @@ async function readTabContent(
     // Read as YouTube shows it to the user, which says why it doesn't play.
     note = `[YouTube gives no details of this video, so it is read as a page, with no transcript: ${noteTitle(read.unplayable)}]`
   }
+  // A Stop while the video was read sends nothing more.
+  signal?.throwIfAborted()
   const page = await readPage(tabId, origin, KEPT_CHARS, product, where)
   if ('reason' in page) throw new Error(page.reason)
   return { page, note }

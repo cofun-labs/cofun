@@ -55,6 +55,7 @@ export async function readVideo(
   id: string,
   product: string,
   where: TabWhere,
+  signal?: AbortSignal,
 ): Promise<TabVideo | { unplayable: string } | NotRead> {
   const page = await inTab(tabId, watchPage, [origin, id], PageResult, product, where)
   if ('reason' in page) return page
@@ -66,6 +67,8 @@ export async function readVideo(
   if ('unplayable' in video) return video
   if ('none' in video.transcript) return { url: page.url, video, lines: [] }
   const { params, context } = video.transcript.request
+  // A Stop while the watch page loaded sends nothing more to YouTube, with the user's session.
+  signal?.throwIfAborted()
   const panel = await inTab(
     tabId,
     transcriptPanel,
@@ -207,6 +210,9 @@ async function watchPage(origin: string, id: string): Promise<z.input<typeof Pag
   // The transcript panel's parameters are on the command that opens it, wherever the page put it.
   let params: unknown
   const stack: unknown[] = [data]
+  // At most this many objects are looked at, far more than a watch page holds (some tens of
+  // thousands), so a page built to be huge can't keep the tab busy; past it the parameters count as
+  // not found, and the video as one whose transcript isn't offered as expected.
   for (let seen = 0; stack.length && params === undefined && seen < 2_000_000; seen++) {
     const value = stack.pop()
     if (!value || typeof value !== 'object') continue

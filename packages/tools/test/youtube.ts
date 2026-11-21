@@ -31,6 +31,8 @@ export class FakeYouTubeTab {
   sent: Sent[] = []
   /** What YouTube answers each kind of request with, in order: `watch` and `panel`. */
   answers: { watch: Answer[]; panel: Answer[] } = { watch: [], panel: [] }
+  /** Called as each request is sent: where a test stops the question midway. */
+  onSent?: (sent: Sent) => void
 
   constructor(url = VIDEO_URL) {
     this.url = url
@@ -91,6 +93,7 @@ export class FakeYouTubeTab {
       credentials: init.credentials,
       signal: init.signal instanceof AbortSignal,
     })
+    this.onSent?.(this.sent.at(-1)!)
     const kind = path.pathname === '/watch' ? 'watch' : path.pathname === '/youtubei/v1/get_panel' ? 'panel' : undefined
     const answer = kind && this.answers[kind].shift()
     if (!answer) throw new Error(`Unexpected request to ${url}`)

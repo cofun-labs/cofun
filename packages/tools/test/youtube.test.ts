@@ -368,4 +368,19 @@ describe('reading a YouTube video', () => {
     )
     expect(tab.sent).toHaveLength(watch.length)
   })
+
+  it('[@no-uc:notion-safety] a Stop while the watch page loads sends no request for the transcript', async () => {
+    const tab = videoTab()
+    const stop = new AbortController()
+    tab.onSent = () => stop.abort(new Error('Stopped'))
+
+    const err = await readCurrentTab.run({}, stop.signal, toolContext()).then(
+      () => expect.unreachable('the read should stop'),
+      (e: unknown) => e as Error,
+    )
+
+    expect(err.message).toBe('Stopped')
+    // Only the watch page: the transcript's request, with the user's session, was never sent.
+    expect(tab.sent.map((sent) => new URL(sent.url).pathname)).toEqual(['/watch'])
+  })
 })
