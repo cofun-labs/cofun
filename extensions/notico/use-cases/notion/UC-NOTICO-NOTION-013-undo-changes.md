@@ -28,4 +28,4 @@ Key constraints:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTICO-NOTION-013-S09 | P0 | 🚧 | Given the side panel open on a Notion page; when the user asks for an edit and then undoes it from the reply; then the page shows its content as before the question after a reload. |
+| UC-NOTICO-NOTION-013-S09 | P0 | ✅ | Given the side panel open on a Notion page; when the user asks for an edit and then undoes it from the reply; then the page shows its content as before the question after a reload. |
