@@ -11,6 +11,7 @@ import { runsText } from '../notion/tree'
 import { databaseNames } from './load'
 import type { ToolMemory } from './memory'
 import { DUPLICATE, MOVE, PAGES_LIST, count, nameOf, on, pageArg } from './shared'
+import { notUndoable, recordCreated, unrecorded } from './undo'
 
 /** How many pages one move_page or trash_page call takes at most, so its preview stays readable. */
 const ORGANIZE_MAX = 50
@@ -180,10 +181,12 @@ export const movePage = defineTool({
     signal?.throwIfAborted()
     try {
       // Moving again puts the pages in the same place, so after a lost answer a retry does no harm.
-      await tab.client.submitTransaction(
-        String(dest.space_id),
-        [op.moveInto(destId, moving), op.touch(destId), ...moving.map((id) => op.touch(id))],
-        'Notico: move_page',
+      await unrecorded(memory, `moving ${count(moving.length, 'page')}`, () =>
+        tab.client.submitTransaction(
+          String(dest.space_id),
+          [op.moveInto(destId, moving), op.touch(destId), ...moving.map((id) => op.touch(id))],
+          'Notico: move_page',
+        ),
       )
     } finally {
       memory.forgetPages([destId, ...parents, ...ids, ...[...above.values()].flat()])
@@ -307,10 +310,22 @@ export const duplicatePage = defineTool({
     const near = above[0] ?? page.parent_id
     signal?.throwIfAborted()
     try {
-      const copy = await tab.client.duplicatePage(String(page.space_id), id, page.parent_id, { signal })
+      let copy: string
+      try {
+        copy = await tab.client.duplicatePage(String(page.space_id), id, page.parent_id, { signal })
+      } catch (err) {
+        if (err instanceof NotionError && err.mayHaveChanged) notUndoable(memory, 'a copy of a page')
+        throw err
+      }
       const hex = hexId(copy)
       // A database's name is not in its block: only a name the agent has seen is given for one.
       const title = memory.knownTitle(id) || runsText(page.properties?.title)
+      await recordCreated(memory, tab, String(page.space_id), {
+        id: copy,
+        parent: page.parent_id,
+        type: page.type,
+        title: `${oneLine(title) || 'Untitled'} (copy)`,
+      })
       const text = [
         `Duplicated ${title ? `${quote(title)} ` : ''}^${hexId(id)} as ^${hex}, right after it in ^${hexId(near)}.`,
         `URL: ${pageLink(tab.url, hex)}`,
@@ -451,7 +466,9 @@ export const trashPage = defineTool({
     signal?.throwIfAborted()
     try {
       // After a lost answer, a retry names the pages already in the trash and trashes nothing.
-      await tab.client.trashPages([...spaces][0], trashing)
+      await unrecorded(memory, `moving ${count(trashing.length, 'page')} to the trash`, () =>
+        tab.client.trashPages([...spaces][0], trashing),
+      )
     } finally {
       memory.forgetPages([...ids, ...[...above.values()].flat()])
     }

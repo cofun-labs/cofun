@@ -11,6 +11,7 @@ import { activeNotionTab, type NotionTab } from '../notion/tab'
 import { needsAttachedPage } from './current'
 import { ADD, GIVE_PAGE, PART_CHARS, READ, filled, nameOf, on, pageArg, partArg, plural } from './shared'
 import { asData } from '@cofun/tools'
+import { unrecorded } from './undo'
 
 /** The page a call names, or the open page when it names none. */
 function commentsPage(tab: NotionTab, given: string | undefined): string {
@@ -138,7 +139,7 @@ export const addComment = defineTool({
       ...text.split('\n').map((l) => `    ${l}`),
     ].join('\n')
   },
-  run: async (args, signal) => {
+  run: async (args, signal, { memory }) => {
     const given = filled(args.page)
     if (!given) throw new EditError(GIVE_PAGE)
     const id = pageArg(given)
@@ -193,7 +194,9 @@ export const addComment = defineTool({
     const where = target === loaded.page.id ? 'the page' : `the block ^${md.refs.get(target)}`
     signal?.throwIfAborted()
     try {
-      await tab.client.submitTransaction(loaded.spaceId, operations, 'Notico: add_comment')
+      await unrecorded(memory, `the comment on ${quote(md.title)}`, () =>
+        tab.client.submitTransaction(loaded.spaceId, operations, 'Notico: add_comment'),
+      )
     } catch (err) {
       // A retry would add the comment twice if this one was saved: the agent must look first.
       if (err instanceof NotionError && err.code === 'outcome_unknown') {

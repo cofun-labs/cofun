@@ -59,6 +59,7 @@ An event says that something happened, never what was written or read: every val
 | The model was switched; a key of your own was saved | Which service, never the key or the model |
 | The settings, credits page, or credit history was opened; a pack of credits was chosen | For a pack, its size |
 | A chat was started, opened, or deleted; a page was added to a question; a reply was stopped or copied | For an added page, whether with `@` or "+" |
+| A question's changes were undone from its reply | Whether it was undone, refused because a page changed since, or failed |
 
 Each event also holds the extension's name and version, the time, a random id of its own and one for the stretch of use it belongs to, our PostHog project's public key, the analytics code's name and version, your browser and operating system, and who it is counted under: a random id made on your device, joined to your Clerk user id once you sign in. It holds no URL, page title, name, email address, or location.
 
@@ -66,7 +67,7 @@ Notico does not record clicks, keystrokes, or the screen, and loads no code from
 
 ## What stays on your device
 
-- **Your chats**, in your Chrome profile, separately for each signed-in account: what you asked, the replies, and what the assistant read to answer, such as Notion pages, tabs, web pages, and searches; of a long page, its full text. Each chat and each question has a random id, sent to our worker with its requests so that what it spent can be matched to it. Chats are not sent to our servers, except that continuing a chat sends it to the worker again. When a conversation grows too long, the selected model summarizes older context. The summary is stored on this device with the original messages and used in later requests.
+- **Your chats**, in your Chrome profile, separately for each signed-in account: what you asked, the replies, and what the assistant read to answer, such as Notion pages, tabs, web pages, and searches; of a long page, its full text. Each chat and each question has a random id, sent to our worker with its requests so that what it spent can be matched to it. Chats are not sent to our servers, except that continuing a chat sends it to the worker again. When a conversation grows too long, the selected model summarizes older context. The summary is stored on this device with the original messages and used in later requests. With each question that changed Notion, the chat keeps what it changed, as it was before and after (text, titles, icons, and values), so that the question can be undone.
 - **Your sign-in**: Clerk's token that keeps you signed in.
 - **Your own model, if you set one up**: your OpenRouter key and the models you chose, for the account that set them up. Removing the key in the settings deletes it.
 - **Settings**: whether the assistant may change your pages (Edit or Read only), whether web searches go to DuckDuckGo, whether usage data is shared, whether the right-click menu shows "Ask Notico" and "Clip page to Notion", and the Notion page clips go to (its address and title). The last three are synced to your other devices if you use Chrome sync.

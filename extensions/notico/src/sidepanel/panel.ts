@@ -76,6 +76,8 @@ const SYSTEM_PROMPT =
   "trash_page: it moves them to Notion's trash, and the user is asked first. Trash only pages the user asked to remove. " +
   'To read the comments on a page, use read_comments; to leave one (say, review notes) without changing the page, ' +
   'use add_comment. ' +
+  'When the user asks to undo what an earlier question changed, use undo_changes, which undoes the latest ' +
+  'question that changed Notion; never change pages back by hand. ' +
   'To mention a workspace member in a page or a comment, write @[Their Name]; Notion notifies them, so mention ' +
   'people only when the user asks for it. ' +
   'When the user refers to what they selected ("the selection", "the highlighted text", or "this" on its own, as ' +

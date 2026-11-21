@@ -27,6 +27,7 @@
 - **Write:** Insert, replace, and delete content in a page. Create new pages with content. Change titles and icons.
 - **Databases:** Create databases, add rows, fill in properties, and add, rename, or remove properties and select options.
 - **Organize:** Move pages under another page, duplicate them, or move them to Notion's trash (it asks you first).
+- **Undo:** Undo what one question changed with the Undo under its reply, or ask Notico to undo its last change. It undoes nothing if the page changed since.
 - **Collaborate:** Add comments on a page or on a block, and mention workspace members by name.
 - **Bring in the web:** On another site, ask about the page you're on, or save it to Notion. Notico reads a site only once you allow it, and says which page it used. Paste a link and it reads that page. It can also search the web, and names the sources it used.
 - **Ask about a selection:** Select text on any page, right-click it, and pick "Ask Notico": the side panel opens with the text added to your question.
@@ -71,7 +72,7 @@ There is nothing to connect on the Notion side: no integration to create, no tok
 **What stays on your device.** Chats are saved in Chrome on your device, per account, and kept after you sign out so you can pick up again. They are not encrypted: anyone who can use your Chrome profile can read them, including the page content Notico read.
 
 > [!WARNING]
-> **It edits without asking first.** Notico edits pages, creates pages and rows, changes properties (it can remove a database property, with its values in every row), adds comments, and moves and duplicates pages as soon as it decides to. Moving pages to the trash is the one thing it asks you about, every time. Each change is shown in the side panel as it happens, and Notion's page history can undo edits. To keep it from changing anything, switch the message box to **Read only** with the pencil button at its bottom left: it then only reads and answers, until you switch back to Edit.
+> **It edits without asking first.** Notico edits pages, creates pages and rows, changes properties (it can remove a database property, with its values in every row), adds comments, and moves and duplicates pages as soon as it decides to. Moving pages to the trash is the one thing it asks you about, every time. Each change is shown in the side panel as it happens, and the reply's **Undo** puts back what that question changed (comments, moved or trashed pages, and a database's properties excepted); Notion's page history can undo edits too. To keep it from changing anything, switch the message box to **Read only** with the pencil button at its bottom left: it then only reads and answers, until you switch back to Edit.
 
 > [!CAUTION]
 > **Be careful with pages you don't control.** Notico reads text written by other people: shared pages, guest content, search results, web pages you ask about, and web search results. An instruction hidden in that text could make it act as you without anyone being asked, for example by copying something private into a page or a comment that others can read, or, even in Read only, into a web address or search it sends out. Comments and mentions also notify people. Page history can undo a change, but not what someone read in the meantime. [More on this trade-off](../../docs/security.md#accepted-writes-without-approval).

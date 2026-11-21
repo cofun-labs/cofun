@@ -1,6 +1,6 @@
 // Tools the agent can run in the extension, one module per area: reading pages (read.ts), finding
 // them (find.ts), writing them (write.ts), databases (database.ts), organizing pages (organize.ts),
-// comments (comments.ts), the current tab, on Notion or another site, and the tabs the user added
+// comments (comments.ts), undoing a question's changes (undo.ts), the current tab, on Notion or another site, and the tabs the user added
 // (current.ts), and @cofun/tools's web pages by their address, web searches, and the long results
 // those keep on the device. This module lists them, and says for the side panel what a call did.
 import type { HistoryMessage, ToolDetails } from '@cofun/agent'
@@ -15,6 +15,7 @@ import { duplicatePage, movePage, trashPage } from './organize'
 import { getSelection, readPage } from './read'
 import type { OpenPage } from './current'
 import { verb } from './shared'
+import { undoChangesTool } from './undo'
 import { createPage, editPage, updatePages } from './write'
 
 export {
@@ -28,6 +29,7 @@ export {
 } from './current'
 export { findPages, type FoundPage } from './find'
 export type { ToolMemory } from './memory'
+export { forgetUndone, undoQuestion } from './undo'
 export { OPEN_A_PAGE, chatTitle, replyTitle, savePage, type SavedTurn } from './save'
 
 const { readWebPage, renderWebPage, searchWeb } = webTools({ product: 'Notico', ownSite: notionSite })
@@ -46,6 +48,7 @@ export const TOOLS: Tool[] = [
   movePage,
   duplicatePage,
   trashPage,
+  undoChangesTool,
   readComments,
   addComment,
   getCurrentTab,

@@ -17,8 +17,9 @@ import {
 import { answering, type ModelSettings } from '@cofun/agent/models'
 import type { Mode } from '@cofun/agent/mode'
 import { track } from '../analytics'
+import { UndoError, describeUndo, undoable } from '../notion/undo'
 import { titleFor, type Session, type SessionStore } from '../sessions'
-import { currentNotionPage } from '../tools'
+import { currentNotionPage, forgetUndone, undoQuestion } from '../tools'
 import { ToolMemory } from '../tools/memory'
 
 /** A tool call as the panel shows it. */
@@ -43,6 +44,16 @@ export interface ShownTool {
 /** How saving a reply or a chat to Notion is going: running, or done with a link to the page. */
 export type SaveState = { status: 'saving' } | { status: 'saved'; url: string }
 
+/**
+ * What a question changed in Notion, as its reply's Undo shows it: what undoing it does, one line
+ * each, and whether it is being undone or was. `error`: why the last try didn't undo it.
+ */
+export interface UndoView {
+  lines: string[]
+  state: 'ready' | 'undoing' | 'undone'
+  error?: string
+}
+
 /** A reply in the order it happened: text the model wrote and the tools it ran in between. */
 export type Part = { type: 'text'; text: string } | { type: 'tool'; tool: ShownTool }
 
@@ -62,6 +73,8 @@ export type Shown =
       copied?: boolean
       /** What the question used, once it ended. */
       details?: QuestionDetails
+      /** The question's id (its turn), once it ended, which its changes are undone by. */
+      turn?: string
     }
 
 export type Reply = Extract<Shown, { role: 'assistant' }>
@@ -86,6 +99,8 @@ export interface ChatSnapshot {
   readonly title?: string
   /** How saving each reply, or the whole chat, to Notion is going, by the key `saveToNotion` was given. */
   readonly saves: Readonly<Record<string, SaveState>>
+  /** What each question changed in Notion that can be undone, by its turn (see UndoView). */
+  readonly undos: Readonly<Record<string, UndoView>>
 }
 
 /** What every chat of one side panel shares, given by the panel. */
@@ -165,6 +180,10 @@ export class ChatSession {
   private ending = Promise.resolve()
   /** The save in progress, if any; the next one waits for it. */
   private saving = Promise.resolve()
+  /** The summary of the conversation's start, as the last question left it: saved with it. */
+  private compaction?: Compaction
+  /** Settles once the undo in progress, if any, has ended: a question waits for it. */
+  private undoing?: Promise<void>
 
   /** A new chat, or `saved` to continue a saved session. */
   constructor(
@@ -172,6 +191,8 @@ export class ChatSession {
     saved?: Session,
   ) {
     this.agent = new CopilotAgent(panel.agent, new ToolMemory(), saved?.messages, saved?.compaction)
+    this.compaction = saved?.compaction
+    for (const [turn, q] of Object.entries(saved?.undo ?? {})) this.memory.undos.set(turn, q)
     this.titled = saved?.titledByModel ?? false
     this.snapshot = {
       id: saved?.id,
@@ -179,6 +200,7 @@ export class ChatSession {
       status: 'ready',
       title: saved?.titledByModel ? saved.title : undefined,
       saves: {},
+      undos: this.undoViews(),
     }
     if (saved)
       this.session = {
@@ -340,11 +362,13 @@ export class ChatSession {
     let conversation: HistoryMessage[] | undefined
     let compaction: Compaction | undefined
     let answered = false
+    this.memory.changes = undefined
     try {
-      // A page search still out goes first: Notion is asked one thing at a time. If it was turned
-      // away, so is the question, which sends nothing; and so it does when the user stopped it, or
-      // left the chat, meanwhile.
+      // A page search still out goes first, and so does an undo: Notion is asked one thing at a
+      // time. If it was turned away, so is the question, which sends nothing; and so it does when
+      // the user stopped it, or left the chat, meanwhile.
       const turnedAway = await q.searched
+      await this.undoing
       if (signal.aborted) {
         this.updateReply((m) => ({ ...m, stopped: true }))
         return
@@ -376,7 +400,13 @@ export class ChatSession {
         q.text,
         onUpdate,
         confirm,
-        { context: q.context, pages: q.pages, selections: q.selections, readOnly, chat: session.id },
+        {
+          context: [q.context, this.undoneNote()].filter(Boolean).join('\n\n'),
+          pages: q.pages,
+          selections: q.selections,
+          readOnly,
+          chat: session.id,
+        },
         { signal },
       )
       track({
@@ -422,8 +452,18 @@ export class ChatSession {
       // was; don't move the session to the top of the list for it. One that used tools keeps them:
       // leaving the chat stopped the question like Stop does, and what it already did must not be
       // done again when the session is continued.
+      // What the question changed in Notion is filed under it, for its reply's Undo.
+      const turn = conversation?.findLast((m) => m.role === 'user')?.turn
+      const changes = this.memory.changes
+      this.memory.changes = undefined
+      if (turn) {
+        if (changes) this.memory.undos.set(turn, changes)
+        this.updateReplyAt(reply, (m) => ({ ...m, turn }))
+      }
+      this.update({ undos: this.undoViews() })
       if (conversation) {
         const messages = conversation
+        this.compaction = compaction
         this.saving = this.saving.then(() => this.save(session, messages, reply, compaction))
         // Once, after the first question answered; not for a chat the user left meanwhile.
         if (answered && !this.titled && !this.left) {
@@ -480,6 +520,81 @@ export class ChatSession {
     )
   }
 
+  /**
+   * Undoes what the question `turn` changed in Notion, once the user agreed in its reply: in the
+   * current tab, which must be on Notion. Does nothing while a question is out or another undo
+   * runs. The reply shows how it went; the chat is saved with it undone, and the model is told with
+   * the next question.
+   */
+  undo(turn: string): Promise<void> {
+    const q = this.memory.undos.get(turn)
+    if (!q || !undoable(q) || this.snapshot.status !== 'ready' || this.undoing || this.left) return Promise.resolve()
+    this.setUndo(turn, { state: 'undoing' })
+    const run = (async () => {
+      try {
+        await undoQuestion(q)
+        track({ event: 'question_undone', outcome: 'done' })
+        this.setUndo(turn, {})
+      } catch (err) {
+        track({
+          event: 'question_undone',
+          outcome: q.undone ? 'done' : err instanceof UndoError ? 'refused' : 'failed',
+        })
+        this.setUndo(turn, { error: err instanceof Error ? err.message : String(err) })
+      } finally {
+        forgetUndone(this.memory, q)
+        this.undoing = undefined
+        const session = this.session
+        if (session && q.undone) {
+          const messages = this.agent.history()
+          this.saving = this.saving.then(() => this.save(session, messages, -1, this.compaction))
+        }
+      }
+    })()
+    this.undoing = run
+    return run
+  }
+
+  /** What undoing each question would do, and how it went, for the replies (see UndoView). */
+  private undoViews(errors: Record<string, string> = {}): Record<string, UndoView> {
+    const views: Record<string, UndoView> = {}
+    for (const [turn, q] of this.memory.undos) {
+      if (!q.undone && !undoable(q)) continue
+      const was = this.snapshot?.undos[turn]
+      const error = errors[turn]
+      views[turn] = {
+        lines: describeUndo(q),
+        state: q.undone ? 'undone' : was?.state === 'undoing' && !error ? 'undoing' : 'ready',
+        ...(error && { error }),
+      }
+    }
+    return views
+  }
+
+  private setUndo(turn: string, { state, error }: { state?: 'undoing'; error?: string }) {
+    const views = this.undoViews(error ? { [turn]: error } : {})
+    if (state && views[turn]) views[turn] = { ...views[turn], state, error: undefined }
+    this.update({ undos: views })
+  }
+
+  /**
+   * For the model, ahead of the next question: the earlier questions whose changes the user undid
+   * from the side panel since. Each is told once.
+   */
+  private undoneNote(): string {
+    const pages = new Set<string>()
+    for (const q of this.memory.undos.values()) {
+      if (!q.undone || q.told) continue
+      q.told = true
+      for (const c of q.changes) pages.add(q.titles[c.page] ? `“${q.titles[c.page]}”` : `^${c.page.replace(/-/g, '')}`)
+    }
+    if (!pages.size) return ''
+    return (
+      `Since the last question, the user undid in Notion what an earlier question changed (on ${[...pages].join(', ')}). ` +
+      'Those pages are back as they were before it: read them again before relying on what you saw.'
+    )
+  }
+
   private declineAll() {
     for (const answer of this.answers.values()) answer(false)
   }
@@ -496,6 +611,13 @@ export class ChatSession {
     if (last?.role !== 'assistant') return
     const next = fn(last)
     if (next !== last) this.update({ messages: [...messages.slice(0, -1), next] })
+  }
+
+  /** Changes the reply at `index` in the list, if it is one. */
+  private updateReplyAt(index: number, fn: (m: Reply) => Reply) {
+    const m = this.snapshot.messages[index]
+    if (m?.role !== 'assistant') return
+    this.update({ messages: this.snapshot.messages.map((x, i) => (i === index ? fn(m) : x)) })
   }
 
   /** Changes the newest call with this id that has not ended, if there is one. */
@@ -530,6 +652,7 @@ export class ChatSession {
           updatedAt: Math.max(Date.now(), (loaded ?? 0) + 1),
           messages,
           compaction,
+          undo: Object.fromEntries(this.memory.undos),
         },
         loaded,
       )
@@ -581,6 +704,7 @@ function toShown(history: HistoryMessage[]): Shown[] {
   const shown: Shown[] = []
   // Of the latest question, shown under its reply.
   let details: QuestionDetails | undefined
+  let turn: string | undefined
   for (const m of history) {
     if (m.role === 'user') {
       shown.push({
@@ -591,10 +715,12 @@ function toShown(history: HistoryMessage[]): Shown[] {
         ...(m.readOnly && { readOnly: true }),
       })
       details = { requests: m.requests, tokens: m.tokens, model: m.model, cost: m.cost }
+      turn = m.turn
       continue
     }
     let reply = shown.at(-1)
-    if (reply?.role !== 'assistant') shown.push((reply = { role: 'assistant', parts: [], details }))
+    if (reply?.role !== 'assistant')
+      shown.push((reply = { role: 'assistant', parts: [], details, ...(turn && { turn }) }))
     if (m.role === 'assistant') {
       for (const p of m.parts)
         reply.parts.push(

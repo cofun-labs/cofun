@@ -66,5 +66,7 @@ export const { track, identify, loadAnalyticsEnabled, saveAnalyticsEnabled } = c
     page_added: { how: z.enum(['mention', 'button']) },
     reply_stopped: {},
     reply_copied: {},
+    /** The user undid a question's changes from its reply: `refused` when something changed since, and nothing was undone. */
+    question_undone: { outcome: z.enum(['done', 'refused', 'failed']) },
   },
 })

@@ -48,7 +48,7 @@ Have your own API key? Bring it through OpenRouter, and the model is paid by you
 PRIVACY
 Your questions, and what Notico reads to answer them (Notion content, web pages, and web searches, which may include text from your Notion pages), go to our server and the AI model, or straight to OpenRouter if you use your own model; links and searches go through our server either way. We don't keep that content, only usage numbers and your purchases. Notico reports which features are used, never what you write or read, and you can turn that off in the settings. No ads.
 
-AI can make mistakes, so check what matters. Every change shows in the panel, and Notion's page history can undo it.
+AI can make mistakes, so check what matters. Every change shows in the panel, and the reply's Undo, or Notion's page history, can undo it.
 
 Source code and privacy policy: https://github.com/cofun-labs/cofun
 

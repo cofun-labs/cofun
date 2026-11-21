@@ -2448,3 +2448,11 @@ button.secondary:focus-visible,
   right: 0;
   max-height: 300px;
 }
+
+/* What undoing a reply's changes does, one line each, in the card that asks first. */
+.undo-lines {
+  margin: 0;
+  padding-left: 18px;
+  font-weight: 400;
+  font-size: 13px;
+}

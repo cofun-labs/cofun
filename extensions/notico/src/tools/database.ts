@@ -23,6 +23,7 @@ import { needsAttachedPage } from './current'
 import { loadRowMentions, resolveDatabase } from './load'
 import { CHANGE, CREATE, READ, TITLE_EMPTY, filled, nameOf, on, pageArg, partArg, plural, shownText } from './shared'
 import { asData } from '@cofun/tools'
+import { notUndoable, recordWrite, unrecorded } from './undo'
 
 /** How many rows one query loads, and how many one result shows. */
 export const QUERY_LOAD = 500
@@ -433,6 +434,7 @@ export const createDatabase = defineTool({
     try {
       await tab.client.submitTransaction(spaceId, operations, 'Notico: create_database')
     } catch (err) {
+      if (err instanceof NotionError && err.mayHaveChanged) notUndoable(memory, `the database “${title}”`)
       // A retry would create a second database if this one was saved: the agent must look first.
       if (err instanceof NotionError && err.code === 'outcome_unknown') {
         memory.forgetRead(parentId)
@@ -446,6 +448,7 @@ export const createDatabase = defineTool({
       throw err
     }
     memory.keepSeenDatabase(ids.page, title)
+    await recordWrite(memory, tab, spaceId, operations, {}, { page: ids.page, titles: { [ids.page]: title } })
     const hex = hexId(ids.page)
     const text = [
       `Created the database “${title}” ^${hex} at the end of ^${hexId(parentId)}.`,
@@ -555,7 +558,9 @@ export const updateDatabaseSchema = defineTool({
     }
     signal?.throwIfAborted()
     try {
-      await tab.client.submitTransaction(db.spaceId, operations, 'Notico: update_database_schema')
+      await unrecorded(memory, `the changes to the properties of “${db.name}”`, () =>
+        tab.client.submitTransaction(db.spaceId, operations, 'Notico: update_database_schema'),
+      )
     } catch (err) {
       // A retry would add a property a second time if this change was saved: the agent must look first.
       if (err instanceof NotionError && err.code === 'outcome_unknown')
