@@ -25,6 +25,8 @@ async function ask(user: UserEvent, question: string) {
 
 /** The question has ended: the composer offers Send again. */
 const answered = () => screen.findByRole('button', { name: 'Send' })
+// The fixture page is not Confluence: each question carries the note saying so.
+const NOT_CONFLUENCE = '[The current tab is not a Confluence page.]'
 
 /**
  * A model reply that stops partway until `resume` is called. The fake model streams each word as an
@@ -117,11 +119,11 @@ describe('sessions', () => {
 
       expect(browser.sentToModel()).toMatchObject([
         { role: 'system' },
-        { role: 'user', content: 'Which page am I on?' },
+        { role: 'user', content: `${NOT_CONFLUENCE}\n\nWhich page am I on?` },
         { role: 'assistant', tool_calls: [{ function: { name: 'get_current_tab' } }] },
         { role: 'tool', content: expect.stringContaining('Fixture page') },
         { role: 'assistant', content: expect.stringContaining('It is a fixture.') },
-        { role: 'user', content: 'What is its title?' },
+        { role: 'user', content: `${NOT_CONFLUENCE}\n\nWhat is its title?` },
       ])
     },
   )

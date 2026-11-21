@@ -21,6 +21,7 @@ import type { AttachmentUpload } from '../confluence/attachments'
 import { activeTab, confluenceTabAt } from '../confluence/tab'
 import type { ConfluenceUndo } from '../confluence/undo'
 import { titleFor, type Session, type SessionStore } from '../sessions'
+import { currentTabNote } from '../tools/current'
 import { ToolMemory } from '../tools/memory'
 
 /** A tool call as the panel shows it. */
@@ -225,9 +226,12 @@ export class ChatSession {
     const originalUndo = this.memory.confluenceUndo
     let undoCleared = false
     const captured = activeTab().catch(() => undefined)
+    const tab = captured.then((at) => at && confluenceTabAt(at))
+    // Whether the question's tab is a Confluence page, for the model: read from the same capture as the tools.
+    const tabNote = currentTabNote(captured, tab)
     this.memory.confluenceQuestion = {
       captured,
-      tab: captured.then((tab) => tab && confluenceTabAt(tab)).catch(() => undefined),
+      tab: tab.catch(() => undefined),
       attachment: q.attachment,
       nextLabel: 0,
       beforeWrite: async () => {
@@ -357,6 +361,9 @@ export class ChatSession {
       const askedWith = answering(await this.panel.model())
       // The service the question is asked of, as the agent reads it when the question starts.
       const provider = askedWith?.service ?? 'hosted'
+      // Checking a self-managed page waits for it to load: a Stop meanwhile goes on at once, with no note.
+      const note = await Promise.race([tabNote, aborted(signal)])
+      const context = [note, q.context].filter(Boolean).join('\n')
       // The mode and the model may have been loading: a Stop, leaving the chat, or the panel closing
       // meanwhile stops the question too, before it counts as asked.
       if (signal.aborted) {
@@ -370,7 +377,7 @@ export class ChatSession {
         q.text,
         onUpdate,
         confirm,
-        { context: q.context, pages: q.pages, selections: q.selections, readOnly, chat: session.id },
+        { context, pages: q.pages, selections: q.selections, readOnly, chat: session.id },
         { signal },
       )
       track({
@@ -611,4 +618,12 @@ function newestOpenCall(parts: Part[], id: string): number {
     j--
   }
   return j
+}
+
+/** Resolves once `signal` is aborted, at once if it already is. */
+function aborted(signal: AbortSignal): Promise<undefined> {
+  return new Promise((resolve) => {
+    if (signal.aborted) resolve(undefined)
+    else signal.addEventListener('abort', () => resolve(undefined), { once: true })
+  })
 }

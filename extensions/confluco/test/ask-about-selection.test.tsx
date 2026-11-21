@@ -59,7 +59,9 @@ const selectionNote = (text: string, clipped?: string) =>
   ].join('\n')
 
 /** What the model gets as the question: the selection's note, then the question. */
-const question = (note: string, typed: string) => `${note}\n\n${typed}`
+// Sent from a tab on a news site: the note on the current tab comes first.
+const NOT_CONFLUENCE = '[The current tab is not a Confluence page.]'
+const question = (note: string, typed: string) => `${NOT_CONFLUENCE}\n${note}\n\n${typed}`
 
 describe('asking about text selected on a page', () => {
   it('[UC-CONFLUCO-CHAT-006-S01] the menu item opens the panel with the selection, and the question carries it as data from the page', async () => {
@@ -187,7 +189,7 @@ describe('asking about text selected on a page', () => {
     browser.ai.script.push({ reply: 'Hello.' })
     await ask(user, 'Hi')
     await screen.findByText('Hello.')
-    expect(sentQuestions(browser)).toEqual(['Hi'])
+    expect(sentQuestions(browser)).toEqual([`${NOT_CONFLUENCE}\n\nHi`])
   })
 
   it('[UC-CONFLUCO-CHAT-006-S04] a reopened question still shows its selection, which takes the tab to the text', async () => {

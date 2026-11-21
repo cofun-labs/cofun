@@ -172,7 +172,8 @@ describe('UC-CONFLUCO-CHAT-005 add open tabs to a conversation', () => {
     await answered()
 
     expect(sentQuestions(browser)).toEqual([
-      '[Tabs the user added to this question, read with read_tab: ' +
+      '[The current tab is not a Confluence page.]\n' +
+        '[Tabs the user added to this question, read with read_tab: ' +
         `"Rivers | News" (tab 20), ${RIVERS}; "Lakes | News" (tab 21), ${LAKES_NOTED}]\n\n` +
         'Compare these',
     ])
