@@ -28,5 +28,5 @@ Key constraint:
 
 | ID                      | Priority | Status | Scenario                                                                                                                                                           |
 | ----------------------- | -------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| UC-WEBCO-PANEL-003-S07 | P1       | 🚧     | Given a user who pastes the address of a public article; when they ask the AI to summarize it; then the AI reads it, answers from what it says, and names its URL. |
+| UC-WEBCO-PANEL-003-S07 | P1       | ✅     | Given a user who pastes the address of a public article; when they ask the AI to summarize it; then the AI reads it, answers from what it says, and names its URL. |
 | UC-WEBCO-PANEL-003-S08 | P2       | 🚧     | Given a user who pastes the address of a page drawn by scripts; when they ask the AI about it; then the AI renders it and answers from what it shows.              |
