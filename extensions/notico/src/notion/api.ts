@@ -553,8 +553,11 @@ export class NotionClient {
     }
   }
 
-  /** Like getRecords, but records that are missing, out of reach, or in the trash are just left out. */
-  async findRecords(pointers: Pointer[]): Promise<RecordMap> {
+  /**
+   * Like getRecords, but records that are missing, out of reach, or in the trash are just left out.
+   * With `deleted`, records deleted or in the trash are kept, with `alive: false`.
+   */
+  async findRecords(pointers: Pointer[], { deleted = false } = {}): Promise<RecordMap> {
     if (!pointers.length) return {}
     // Large lists go in batches, so no single request grows without bound.
     if (pointers.length > RECORDS_BATCH) {
@@ -563,7 +566,9 @@ export class NotionClient {
       // A few batches at a time, so a long list doesn't flood the user's tab with requests.
       const out: RecordMap = {}
       for (let at = 0; at < batches.length; at += RECORDS_PARALLEL) {
-        const maps = await settleAll(batches.slice(at, at + RECORDS_PARALLEL).map((b) => this.findRecords(b)))
+        const maps = await settleAll(
+          batches.slice(at, at + RECORDS_PARALLEL).map((b) => this.findRecords(b, { deleted })),
+        )
         for (const map of maps) mergeRecordMaps(out, map)
       }
       return out
@@ -580,6 +585,7 @@ export class NotionClient {
       spaces.size === 1 ? [...spaces][0] : undefined,
     )
     const recordMap = normalizeRecordMap(json.recordMap)
+    if (deleted) return recordMap
     for (const records of Object.values(recordMap)) {
       for (const [id, record] of Object.entries(records ?? {})) if (record.alive === false) delete records![id]
     }
@@ -864,32 +870,43 @@ export class NotionClient {
   async trashPages(space: string, pages: { id: string; parentId: string; parentTable: 'block' | 'space' }[]) {
     const spaceId = notionId(space)
     const op = blockOps(spaceId, Date.now(), this.userId)
-    const operations: Operation[] = []
-    for (const p of pages) {
-      // A page in a page is listed in its `content`; a top-level page in its workspace's `pages`.
-      operations.push({
-        pointer: { table: p.parentTable, id: p.parentId, spaceId },
-        path: [p.parentTable === 'block' ? 'content' : 'pages'],
-        command: 'removeChild',
-        args: { id: notionId(p.id) },
-      })
-      operations.push(op.touch(p.id))
-    }
-    await this.submitTransaction(spaceId, operations, 'Notico: trash_page')
+    await this.submitTransaction(
+      spaceId,
+      pages.flatMap((p) => op.trash(p.parentTable, p.parentId, p.id)),
+      'Notico: trash_page',
+    )
+    await this.trashed(
+      spaceId,
+      pages.map((p) => p.id),
+      "The pages were moved to Notion's trash.",
+    )
+  }
+
+  /**
+   * Undoes what a question changed: `operations` (see notion/undo.ts) in one transaction, then the
+   * pages among them that go to the trash (`trashed`) are reported trashed, as trashPages does.
+   */
+  async submitUndo(space: string, operations: Operation[], trashed: string[]): Promise<void> {
+    const spaceId = notionId(space)
+    await this.submitTransaction(spaceId, operations, 'Notico: undo')
+    if (trashed.length) await this.trashed(spaceId, trashed, 'The changes were undone.')
+  }
+
+  /** What Notion's own client sends after trashing pages; `permanentlyDelete` stays false, always. */
+  private async trashed(spaceId: string, pages: string[], done: string): Promise<void> {
     try {
-      // What Notion's own client sends after trashing; `permanentlyDelete` stays false, always.
       await this.request(
         'deleteContentRecords',
-        { records: pages.map((p) => ({ id: notionId(p.id), table: 'block', spaceId })), permanentlyDelete: false },
+        { records: pages.map((id) => ({ id: notionId(id), table: 'block', spaceId })), permanentlyDelete: false },
         spaceId,
       )
     } catch (err) {
       // The pages are in the trash already: the transaction did that. This call only matches
       // what Notion's own client sends after it. A failure that stops the question still does.
       if (err instanceof NotionError && err.stopsQuestion)
-        throw new NotionError('notion_error', "The pages were moved to Notion's trash.", {
+        throw new NotionError('notion_error', done, {
           cause: err,
-          stopsQuestion: `The pages were moved to Notion's trash. ${err.stopsQuestion}`,
+          stopsQuestion: `${done} ${err.stopsQuestion}`,
           mayHaveChanged: true,
         })
       console.warn('Notion did not take the trashed pages’ deleteContentRecords', err)
@@ -1266,6 +1283,41 @@ export function blockOps(spaceId: string, now: number, userId: string | undefine
           args: { alive: false, last_edited_time: now, ...editedBy },
         },
         { pointer: pointer(parentId), path: ['content'], command: 'listRemove', args: { id } },
+      ]
+    },
+    /**
+     * Moves a page to the trash, as Notion's "Move to Trash" does: out of its parent's list (a page
+     * in a page is listed in its `content`, a top-level page in its workspace's `pages`), marked
+     * edited. A database row is listed nowhere: it is marked not alive.
+     */
+    trash(parentTable: 'block' | 'space' | 'collection', parentId: string, id: string): Operation[] {
+      const edited: Operation = {
+        pointer: pointer(id),
+        path: [],
+        command: 'update',
+        args: { ...(parentTable === 'collection' && { alive: false }), last_edited_time: now, ...editedBy },
+      }
+      if (parentTable === 'collection') return [edited]
+      return [
+        {
+          pointer: { table: parentTable, id: parentId, spaceId },
+          path: [parentTable === 'block' ? 'content' : 'pages'],
+          command: 'removeChild',
+          args: { id: notionId(id) },
+        },
+        edited,
+      ]
+    },
+    /** Brings a deleted block back (see `remove`): alive again, and listed by `list` in its parent again. */
+    restore(id: string, list: Operation): Operation[] {
+      return [
+        {
+          pointer: pointer(id),
+          path: [],
+          command: 'update',
+          args: { alive: true, last_edited_time: now, ...editedBy },
+        },
+        list,
       ]
     },
     /** Changes property values, text included; the only way Notion accepts for existing blocks. */

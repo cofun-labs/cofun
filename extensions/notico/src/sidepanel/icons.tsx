@@ -30,6 +30,8 @@ const SHAPES = {
     </>
   ),
   back: <path d="M9.5 3.5L5 8l4.5 4.5" />,
+  /** Goes back on a change. */
+  undo: <path d="M5.5 3L2.5 6l3 3M2.5 6h7a3.5 3.5 0 0 1 0 7H7" />,
   /** Leads on to another page. */
   forward: <path d="M6 3.5L10.5 8 6 12.5" />,
   /** A stack of coins: credits. */

@@ -90,6 +90,7 @@ const CHANGING = [
   'move_page',
   'duplicate_page',
   'trash_page',
+  'undo_changes',
   'add_comment',
 ]
 

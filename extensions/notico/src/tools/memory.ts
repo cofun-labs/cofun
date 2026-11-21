@@ -1,11 +1,13 @@
 // What the tools remember of one conversation between calls: the pages it read, the rows and
-// databases it saw, the workspaces of the pages open while it ran, and what its question carries.
+// databases it saw, the workspaces of the pages open while it ran, what its question carries, and
+// what each question changed in Notion, to undo it (saved with the chat).
 // Each agent has its own (CopilotAgent.memory), which it gives every call in its ToolContext, so each
 // chat has its own: a late call of a chat the user left changes only that chat's memory, and a
 // chat opened again starts with nothing read. The maps are the class's own: tools read and change
 // them only through its methods.
 import type { PageRead } from '../notion/edit'
 import type { Schema } from '../notion/markdown'
+import type { QuestionChanges } from '../notion/undo'
 import type { OpenPage } from './current'
 
 /** How many rows and databases the agent saw are remembered, for previews; the oldest go first. */
@@ -56,6 +58,13 @@ export class ToolMemory {
   private readonly pageWorkspaces = new Map<string, string>()
   /** Until the first question carries pages, nothing was left out and no tab was added. */
   carried: Carried = { openPage: true, tabs: new Map() }
+  /**
+   * What the question being answered changed in Notion, as it can be undone (see tools/undo.ts):
+   * none until it changes something. The side panel files it under the question when it ends.
+   */
+  changes?: QuestionChanges
+  /** What earlier questions of the chat changed, by the question's id (its turn), oldest first. */
+  readonly undos = new Map<string, QuestionChanges>()
 
   /** Keeps a read, as the most recent one. */
   remember(read: PageRead): void {

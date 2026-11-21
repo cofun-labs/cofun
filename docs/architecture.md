@@ -81,7 +81,7 @@ The user can save a reply, or the whole chat, as a new Notion page. It is the us
 
 ### Writes without approval
 
-The agent changes Notion without asking first, except to move pages to the trash; Read only is the switch for a user who does not want that. The trade-off is in [security.md](security.md#accepted-writes-without-approval).
+The agent changes Notion without asking first, except to move pages to the trash; Read only is the switch for a user who does not want that. Each write tool keeps, with the question, what the records it changed were before and after (read back from Notion), and the chat is saved with it, so the reply can undo the question: undoing reads those records again, refuses if any changed since, and puts them back in one transaction. The trade-off is in [security.md](security.md#accepted-writes-without-approval).
 
 ### Usage data
 
