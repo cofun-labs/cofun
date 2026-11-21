@@ -166,6 +166,10 @@
                 "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
               },
               {
+                "group": ["@cofun/panel-test", "@cofun/panel-test/**"],
+                "message": "@cofun/panel-test is the side panel's UI test harness: only an extension's tests and vitest.config.ts use it."
+              },
+              {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
                 "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
               },
@@ -265,6 +269,10 @@
                 "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
               },
               {
+                "group": ["@cofun/panel-test", "@cofun/panel-test/**"],
+                "message": "@cofun/panel-test is the side panel's UI test harness: only an extension's tests and vitest.config.ts use it."
+              },
+              {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
                 "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
               },
@@ -321,6 +329,10 @@
               {
                 "regex": "^zod(/|$)",
                 "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+              },
+              {
+                "group": ["@cofun/panel-test", "@cofun/panel-test/**"],
+                "message": "@cofun/panel-test is the side panel's UI test harness: only an extension's tests and vitest.config.ts use it."
               },
               {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
@@ -382,6 +394,10 @@
                 "message": "Only @cofun/analytics (packages/analytics/src/index.ts) imports the PostHog SDK. Call the extension's track() (src/analytics.ts), whose events are the only ones that can be sent."
               },
               {
+                "group": ["@cofun/panel-test", "@cofun/panel-test/**"],
+                "message": "@cofun/panel-test is the side panel's UI test harness: only an extension's tests and vitest.config.ts use it."
+              },
+              {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
                 "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
               },
@@ -424,6 +440,10 @@
               {
                 "regex": "^zod(/|$)",
                 "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+              },
+              {
+                "group": ["@cofun/panel-test", "@cofun/panel-test/**"],
+                "message": "@cofun/panel-test is the side panel's UI test harness: only an extension's tests and vitest.config.ts use it."
               },
               {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
@@ -715,6 +735,89 @@
                 "message": "A package never imports what is outside it, such as an extension: an extension calls it, and passes it what it needs as parameters."
               }
             ]
+          }
+        ]
+      }
+    },
+    {
+      // @cofun/panel-test is test code: like a package's tests, it runs against the worker (worker/src/app.ts
+      // and its fakes, three levels up), never an extension.
+      "files": ["packages/panel-test/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@earendil-works/pi-agent-core",
+                  "@earendil-works/pi-agent-core/**",
+                  "@earendil-works/pi-ai",
+                  "@earendil-works/pi-ai/**"
+                ],
+                "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
+              },
+              {
+                "group": ["posthog-js", "posthog-js/**"],
+                "message": "Only @cofun/analytics (packages/analytics/src/index.ts) imports the PostHog SDK. Call the extension's track() (src/analytics.ts), whose events are the only ones that can be sent."
+              },
+              {
+                "regex": "^zod(/|$)",
+                "message": "Import z from the package's src/zod.ts: it sets zod up for the extensions' content security policy before any schema is built."
+              },
+              {
+                "regex": "^(\\.\\./)+extensions/",
+                "message": "A package never imports an extension: an extension's tests pass the harness what is the extension's own as parameters (TestedExtension)."
+              }
+            ]
+          }
+        ],
+        // Its fakes stand in for chrome.scripting, so they replace it; chrome.debugger stays banned.
+        "no-restricted-properties": [
+          "error",
+          {
+            "object": "chrome",
+            "property": "debugger",
+            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Site requests run through chrome.scripting in the extension's src/<site>/tab.ts."
+          }
+        ]
+      }
+    },
+    {
+      // @cofun/panel-test's one module that imports zod.
+      "files": ["packages/panel-test/src/zod.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@earendil-works/pi-agent-core",
+                  "@earendil-works/pi-agent-core/**",
+                  "@earendil-works/pi-ai",
+                  "@earendil-works/pi-ai/**"
+                ],
+                "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
+              },
+              {
+                "group": ["posthog-js", "posthog-js/**"],
+                "message": "Only @cofun/analytics (packages/analytics/src/index.ts) imports the PostHog SDK. Call the extension's track() (src/analytics.ts), whose events are the only ones that can be sent."
+              },
+              {
+                "regex": "^(\\.\\./)+extensions/",
+                "message": "A package never imports an extension: an extension's tests pass the harness what is the extension's own as parameters (TestedExtension)."
+              }
+            ]
+          }
+        ],
+        // Its fakes stand in for chrome.scripting, so they replace it; chrome.debugger stays banned.
+        "no-restricted-properties": [
+          "error",
+          {
+            "object": "chrome",
+            "property": "debugger",
+            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Site requests run through chrome.scripting in the extension's src/<site>/tab.ts."
           }
         ]
       }

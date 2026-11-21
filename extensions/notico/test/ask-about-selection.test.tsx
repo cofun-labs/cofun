@@ -5,7 +5,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { FakeNotionTab, webPage } from './notion-tab'
-import { closeBrowser, FakeBrowser } from './panel'
+import { closeBrowser, FakeBrowser } from './browser'
 
 async function openSettings(user: UserEvent) {
   await user.click(screen.getByRole('button', { name: 'Account' }))

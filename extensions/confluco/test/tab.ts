@@ -1,14 +1,5 @@
 // Chrome APIs and tab DOM used at the extension boundary.
 const globals = globalThis as Record<string, unknown>
-const saved = { chrome: globals.chrome, fetch: globals.fetch }
-
-/** Puts back the globals a FakeTab replaced. Call it after each test. */
-export function restoreGlobals(): void {
-  for (const [key, value] of Object.entries(saved)) {
-    if (value === undefined) delete globals[key]
-    else globals[key] = value
-  }
-}
 
 /** A context menu item, as the extension made or updated it. */
 interface MenuItem {

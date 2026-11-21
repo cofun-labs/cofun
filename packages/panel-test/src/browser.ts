@@ -1,10 +1,13 @@
 // The side panel's UI tests run the whole panel: the page sidepanel.html loads, with the real agent,
 // tools, and session store behind it, and the real worker answering its model calls. Only the edges
-// are fakes: chrome.* (with a Notion tab), Clerk (see clerk.tsx), IndexedDB, the model binding, the
-// services a user's own model is on (OpenRouter), PostHog, where usage events go, and DuckDuckGo,
-// a user's free web search.
+// are fakes: chrome.* (with the extension's own tab fake), Clerk (see clerk.tsx), IndexedDB, the model
+// binding, the services a user's own model is on (OpenRouter), PostHog, where usage events go, and
+// DuckDuckGo, a user's free web search.
+//
+// Every extension's UI tests share this browser. What is the extension's own (its side panel page,
+// its service worker, its tab fake, its manifest's host permissions, and which tabs it opens for
+// itself) it passes as a TestedExtension: nothing here knows an extension.
 import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { act } from '@testing-library/react'
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
 import { vi } from 'vitest'
@@ -22,8 +25,6 @@ import {
 } from '../../../worker/test/fakes'
 import { FakeStripe, signature, WEBHOOK_SECRET } from '../../../worker/test/stripe'
 import type { FakeSession } from './clerk'
-import { isNotion } from '../src/notion/hosts'
-import { restoreGlobals, type FakeNotionTab } from './notion-tab'
 import { FakeDuckDuckGo } from './duckduckgo'
 import { FakeOpenRouter, OPENROUTER } from './openrouter'
 import { FakePostHog, POSTHOG } from './posthog'
@@ -36,6 +37,8 @@ const WORKER = 'https://api.copilot.test'
 export const START = new Date('2026-11-08T12:00:00Z')
 
 const globals = globalThis as Record<string, unknown>
+// What the test environment had before a FakeBrowser (and the tab fake it installs) replaced them.
+const saved = { chrome: globals.chrome, fetch: globals.fetch }
 // jsdom lays nothing out, so it has no scrolling; the panel scrolls its messages to the newest one.
 Element.prototype.scrollTo ??= () => {}
 const app = createApp()
@@ -43,10 +46,40 @@ const app = createApp()
 let clerk: Promise<FakeClerk> | undefined
 
 /**
- * A browser with the extension installed and one tab: its chrome.* APIs, its IndexedDB, who is
- * signed in to Notico, and the worker the panel talks to. Lives for one test.
+ * The extension's tab fake: what stands in for chrome.* (tabs, scripting, storage, permissions, the
+ * context menu) around the tab the browser starts on.
  */
-export class FakeBrowser {
+export interface TabFake {
+  /** Puts its chrome.* in place of the global one. */
+  install(): unknown
+  /** The sites the user allowed the extension to read (optional host permissions), as match patterns. */
+  readonly allowed: Set<string>
+  /** The context menu items the extension made, by id. */
+  readonly menuItems: ReadonlyMap<string, unknown>
+  /** Chrome tells the extension's service worker it was installed. */
+  extensionInstalled(): void
+}
+
+/** What an extension's UI tests tell the browser about the extension. */
+export interface TestedExtension {
+  /** The path of its side panel page (sidepanel.html), whose module script the panel starts from. */
+  sidePanel: string
+  /** Imports its service worker (src/background.ts) afresh. */
+  background: () => Promise<unknown>
+  /** The required host permissions its build has (manifest.ts). */
+  hostPermissions: string[]
+  /**
+   * Whether a URL the panel opens goes to a tab of the tab fake, which the panel goes on to use (a
+   * page of the extension's own site). Other tabs are only noted in `openedTabs`.
+   */
+  opensTab?: (url: string) => boolean
+}
+
+/**
+ * A browser with the extension installed and one tab: its chrome.* APIs, its IndexedDB, who is
+ * signed in to the extension, and the worker the panel talks to. Lives for one test.
+ */
+export class FakeBrowser<Tab extends TabFake = TabFake> {
   /** The model behind the worker; script its replies, and read what it was sent. Title requests go to `titles`. */
   readonly ai = new FakeAiBinding()
   /**
@@ -80,7 +113,8 @@ export class FakeBrowser {
   private issuer!: FakeClerk
 
   private constructor(
-    readonly tab: FakeNotionTab,
+    private readonly extension: TestedExtension,
+    readonly tab: Tab,
     private readonly session: FakeSession | undefined,
   ) {}
 
@@ -116,8 +150,12 @@ export class FakeBrowser {
     if (!res.ok) throw new Error(`event refused: ${res.status} ${await res.text()}`)
   }
 
-  /** Starts a browser on `tab`, signed in to Notico as `signedInAs` or signed out. */
-  static async start(tab: FakeNotionTab, options: { signedInAs?: string } = {}): Promise<FakeBrowser> {
+  /** Starts a browser with `extension` installed on `tab`, signed in to it as `signedInAs` or signed out. */
+  static async start<Tab extends TabFake>(
+    extension: TestedExtension,
+    tab: Tab,
+    options: { signedInAs?: string } = {},
+  ): Promise<FakeBrowser<Tab>> {
     vi.useFakeTimers({ toFake: ['Date'], now: START })
     const issuer = await (clerk ??= FakeClerk.create())
     const userId = options.signedInAs
@@ -127,7 +165,7 @@ export class FakeBrowser {
       email: 'alice@example.com',
       getToken: () => issuer.sessionToken({ userId, azp: EXTENSION }),
     }
-    const browser = new FakeBrowser(tab, session || undefined)
+    const browser = new FakeBrowser(extension, tab, session || undefined)
 
     const env: Env = {
       AI: {
@@ -173,23 +211,14 @@ export class FakeBrowser {
     chrome.runtime = {
       ...(chrome.runtime as object),
       getURL: (path: string) => `${EXTENSION}/${path}`,
-      // The required host permissions a build has (manifest.ts): Notion, and the hosts sign-in uses.
-      getManifest: () => ({
-        version: '1.2.3',
-        host_permissions: [
-          'https://www.notion.so/*',
-          'https://app.notion.com/*',
-          'https://clerk.cofun.cc/*',
-          'https://api.cofun.cc/*',
-          'https://*.cofun.cc/*',
-        ],
-      }),
+      getManifest: () => ({ version: '1.2.3', host_permissions: extension.hostPermissions }),
     }
-    // A Notion page opens in a tab of its own, which the panel goes on to use; other tabs are only noted.
+    // A page of the extension's own site opens in a tab of its own, which the panel goes on to use;
+    // other tabs are only noted.
     const create = chrome.tabs.create as (props: { url: string }) => Promise<unknown>
     chrome.tabs.create = async (props: { url: string }) => {
       browser.openedTabs.push(props.url)
-      return isNotion(props.url) ? create(props) : undefined
+      return extension.opensTab?.(props.url) ? create(props) : undefined
     }
     browser.duckDuckGo.install(chrome as never, tab.allowed)
     // Clerk's cookie on the sign-in page, which the panel watches to notice a sign-in or sign-out there.
@@ -208,10 +237,7 @@ export class FakeBrowser {
   async openPanel(): Promise<void> {
     await closePanel()
     vi.resetModules()
-    const page = new DOMParser().parseFromString(
-      readFileSync(fileURLToPath(import.meta.resolve('../sidepanel.html')), 'utf8'),
-      'text/html',
-    )
+    const page = new DOMParser().parseFromString(readFileSync(this.extension.sidePanel, 'utf8'), 'text/html')
     const script = page.querySelector('script[type="module"]')!
     script.remove()
     document.body.innerHTML = page.body.innerHTML
@@ -226,7 +252,7 @@ export class FakeBrowser {
    */
   async startServiceWorker(): Promise<void> {
     vi.resetModules()
-    await import('../src/background')
+    await this.extension.background()
     this.tab.extensionInstalled()
     // It reads its settings before it makes its menu item.
     await vi.waitFor(() => {
@@ -253,10 +279,13 @@ async function closePanel(): Promise<void> {
   document.body.innerHTML = ''
 }
 
-/** Closes the panel and puts back what a FakeBrowser replaced. Call it after each test. */
+/** Closes the panel and puts back what a FakeBrowser and its tab fake replaced. Call it after each test. */
 export async function closeBrowser(): Promise<void> {
   await closePanel()
-  restoreGlobals()
+  for (const [key, value] of Object.entries(saved)) {
+    if (value === undefined) delete globals[key]
+    else globals[key] = value
+  }
   delete globals.indexedDB
   delete globals.IDBKeyRange
   vi.useRealTimers()

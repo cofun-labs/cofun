@@ -2,7 +2,7 @@ import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { DATA_LINE } from '@cofun/tools'
 import { z } from '../src/zod'
-import { closeBrowser, FakeBrowser } from './panel'
+import { closeBrowser, FakeBrowser } from './browser'
 import { FakeTab, webPage } from './tab'
 
 export const base = 'https://wiki.example.test/kb'

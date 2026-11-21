@@ -1,4 +1,3 @@
-import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
 // What the build reads from .env.local. Nothing is sent to these hosts: the tests answer every request.
@@ -16,10 +15,10 @@ export default defineConfig({
     projects: [
       // The extension's client code, in Node, with the real modules, on the same clock as the UI tests.
       { test: { name: 'client', include: ['test/**/*.test.ts'], env: { ...env, TZ: 'Asia/Kolkata' } } },
-      // The side panel's UI, in a DOM. Only here is Clerk a fake; see test/clerk.tsx.
+      // The side panel's UI, in a DOM. Only here is Clerk a fake; see @cofun/panel-test's clerk.tsx.
       {
         resolve: {
-          alias: { '@clerk/chrome-extension': fileURLToPath(new URL('./test/clerk.tsx', import.meta.url)) },
+          alias: { '@clerk/chrome-extension': '@cofun/panel-test/clerk' },
         },
         // The panel shows times on the user's own clock and tells the worker how far it is from UTC.
         // The tests pin a clock that is not UTC, and not a whole number of hours from it.

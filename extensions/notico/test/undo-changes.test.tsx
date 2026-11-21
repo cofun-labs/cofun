@@ -6,7 +6,7 @@ import { screen, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE } from './notion-tab'
-import { closeBrowser, FakeBrowser } from './panel'
+import { closeBrowser, FakeBrowser } from './browser'
 
 afterEach(closeBrowser)
 

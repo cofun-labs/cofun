@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/vitest'
 import { screen, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
-import { closeBrowser, FakeBrowser } from './panel'
+import { closeBrowser, FakeBrowser } from './browser'
 import { pageTab } from './tab'
 
 afterEach(closeBrowser)

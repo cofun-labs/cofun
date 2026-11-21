@@ -1,6 +1,6 @@
 // Stands in for PostHog's ingestion host (VITE_POSTHOG_HOST in vitest.config.ts): keeps every
 // request the panel's analytics sent, whole, and the events in them.
-import { z } from '../src/zod'
+import { z } from './zod'
 
 export const POSTHOG = 'https://posthog.test'
 
