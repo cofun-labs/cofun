@@ -1,3 +1,4 @@
+import type { TabKind } from '@cofun/tools'
 // Confluco's own icon, the one in the toolbar and the store; the Cofun mark alone means Cofun.
 import conflucoIcon from '../../icons/icon.svg'
 import { Icon, type IconName } from './icons'
@@ -8,8 +9,20 @@ interface Suggestion {
   text: string
 }
 
-function startSet(readable: boolean) {
+/** The suggestions at the start of a chat, for what Confluco could read in the current tab, if anything. */
+function startSet(readable: TabKind | undefined) {
   const web: Suggestion = { icon: 'globe', text: 'Search the web for …' }
+  if (readable === 'video')
+    return {
+      heading: 'What do you want to know about this video?',
+      line: "Confluco can read this video's transcript and search the web.",
+      suggestions: [
+        { icon: 'summary', text: 'Summarize this video' },
+        { icon: 'clock', text: 'List its key moments with their times' },
+        { icon: 'question', text: 'What does the video say about …' },
+        web,
+      ] satisfies Suggestion[],
+    }
   return readable
     ? {
         heading: 'What do you want to know about this page?',
@@ -33,7 +46,13 @@ function startSet(readable: boolean) {
  * gives `onPick` the text for the message box and where the caret goes: where a "…" was, for the
  * user to finish it, or else at the end.
  */
-export function ChatStart({ readable, onPick }: { readable: boolean; onPick: (text: string, caret: number) => void }) {
+export function ChatStart({
+  readable,
+  onPick,
+}: {
+  readable: TabKind | undefined
+  onPick: (text: string, caret: number) => void
+}) {
   const { heading, line, suggestions } = startSet(readable)
   return (
     <div className="empty">

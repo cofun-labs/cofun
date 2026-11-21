@@ -483,7 +483,7 @@
           {
             "object": "chrome",
             "property": "scripting",
-            "message": "In a package, only @cofun/tools's tab.ts and duckduckgo/tab.ts use chrome.scripting: they read the page a tab shows. Use what they export."
+            "message": "In a package, only @cofun/tools's tab.ts, duckduckgo/tab.ts, and youtube/tab.ts use chrome.scripting: they read the page or video a tab shows. Use what they export."
           }
         ]
       }
@@ -522,15 +522,16 @@
     },
     {
       // @cofun/tools sends no request of its own: it reads pages in the user's tabs, and asks the agent,
-      // which asks the worker, for web pages by their address and searches. Its other restrictions
-      // (the packages/*/src block) still hold.
+      // which asks the worker, for web pages by their address and searches. The one exception is
+      // youtube/tab.ts, below, whose requests run inside the user's YouTube tab. Its other
+      // restrictions (the packages/*/src block) still hold.
       "files": ["packages/tools/src/**"],
       "rules": {
         "no-restricted-globals": [
           "error",
           {
             "name": "fetch",
-            "message": "@cofun/tools reads the web only through the user's tabs (chrome.scripting) and the agent (ToolContext.readWeb, searchWeb), which asks the worker: it sends no request itself."
+            "message": "@cofun/tools reads the web only through the user's tabs (chrome.scripting) and the agent (ToolContext.readWeb, searchWeb), which asks the worker: it sends no request itself, but from inside a YouTube tab (youtube/tab.ts)."
           }
         ],
         "no-restricted-properties": [
@@ -543,22 +544,22 @@
           {
             "object": "chrome",
             "property": "scripting",
-            "message": "In a package, only @cofun/tools's tab.ts and duckduckgo/tab.ts use chrome.scripting: they read the page a tab shows. Use what they export."
+            "message": "In a package, only @cofun/tools's tab.ts, duckduckgo/tab.ts, and youtube/tab.ts use chrome.scripting: they read the page or video a tab shows. Use what they export."
           },
           {
             "object": "globalThis",
             "property": "fetch",
-            "message": "@cofun/tools reads the web only through the user's tabs (chrome.scripting) and the agent (ToolContext.readWeb, searchWeb), which asks the worker: it sends no request itself."
+            "message": "@cofun/tools reads the web only through the user's tabs (chrome.scripting) and the agent (ToolContext.readWeb, searchWeb), which asks the worker: it sends no request itself, but from inside a YouTube tab (youtube/tab.ts)."
           },
           {
             "object": "window",
             "property": "fetch",
-            "message": "@cofun/tools reads the web only through the user's tabs (chrome.scripting) and the agent (ToolContext.readWeb, searchWeb), which asks the worker: it sends no request itself."
+            "message": "@cofun/tools reads the web only through the user's tabs (chrome.scripting) and the agent (ToolContext.readWeb, searchWeb), which asks the worker: it sends no request itself, but from inside a YouTube tab (youtube/tab.ts)."
           },
           {
             "object": "self",
             "property": "fetch",
-            "message": "@cofun/tools reads the web only through the user's tabs (chrome.scripting) and the agent (ToolContext.readWeb, searchWeb), which asks the worker: it sends no request itself."
+            "message": "@cofun/tools reads the web only through the user's tabs (chrome.scripting) and the agent (ToolContext.readWeb, searchWeb), which asks the worker: it sends no request itself, but from inside a YouTube tab (youtube/tab.ts)."
           }
         ]
       }
@@ -579,17 +580,35 @@
           {
             "object": "globalThis",
             "property": "fetch",
-            "message": "@cofun/tools reads the web only through the user's tabs (chrome.scripting) and the agent (ToolContext.readWeb, searchWeb), which asks the worker: it sends no request itself."
+            "message": "@cofun/tools reads the web only through the user's tabs (chrome.scripting) and the agent (ToolContext.readWeb, searchWeb), which asks the worker: it sends no request itself, but from inside a YouTube tab (youtube/tab.ts)."
           },
           {
             "object": "window",
             "property": "fetch",
-            "message": "@cofun/tools reads the web only through the user's tabs (chrome.scripting) and the agent (ToolContext.readWeb, searchWeb), which asks the worker: it sends no request itself."
+            "message": "@cofun/tools reads the web only through the user's tabs (chrome.scripting) and the agent (ToolContext.readWeb, searchWeb), which asks the worker: it sends no request itself, but from inside a YouTube tab (youtube/tab.ts)."
           },
           {
             "object": "self",
             "property": "fetch",
-            "message": "@cofun/tools reads the web only through the user's tabs (chrome.scripting) and the agent (ToolContext.readWeb, searchWeb), which asks the worker: it sends no request itself."
+            "message": "@cofun/tools reads the web only through the user's tabs (chrome.scripting) and the agent (ToolContext.readWeb, searchWeb), which asks the worker: it sends no request itself, but from inside a YouTube tab (youtube/tab.ts)."
+          }
+        ]
+      }
+    },
+    {
+      // @cofun/tools's site layer for a YouTube video, which runs its requests inside the user's
+      // YouTube tab (chrome.scripting, ISOLATED world), to the tab's own origin with its session, as
+      // Notico's src/notion/tab.ts does in a Notion tab: fetch appears only in the functions it
+      // injects there. Its other restrictions (the packages/tools/src block) still hold.
+      "files": ["packages/tools/src/youtube/tab.ts"],
+      "rules": {
+        "no-restricted-globals": "off",
+        "no-restricted-properties": [
+          "error",
+          {
+            "object": "chrome",
+            "property": "debugger",
+            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Site requests run through chrome.scripting in the extension's src/<site>/tab.ts."
           }
         ]
       }
@@ -602,6 +621,7 @@
         "packages/tools/src/tab.ts",
         "packages/tools/src/markdown.ts",
         "packages/tools/src/duckduckgo/**",
+        "packages/tools/src/youtube/**",
         "packages/tools/src/selection.ts"
       ],
       "rules": {
@@ -611,11 +631,11 @@
             "patterns": [
               {
                 "group": ["@cofun/agent"],
-                "message": "@cofun/tools's site layers (tab.ts, markdown.ts, duckduckgo/) and selection.ts import nothing from the agent (@cofun/agent): the tools depend on them, not the other way round."
+                "message": "@cofun/tools's site layers (tab.ts, markdown.ts, duckduckgo/, youtube/) and selection.ts import nothing from the agent (@cofun/agent): the tools depend on them, not the other way round."
               },
               {
                 "regex": "^(\\.\\.?/)+(tools|index|free-search)(/|\\.|$)",
-                "message": "@cofun/tools's site layers (tab.ts, markdown.ts, duckduckgo/) and selection.ts import nothing from its tools, its index, or free-search.ts: those depend on them, not the other way round."
+                "message": "@cofun/tools's site layers (tab.ts, markdown.ts, duckduckgo/, youtube/) and selection.ts import nothing from its tools, its index, or free-search.ts: those depend on them, not the other way round."
               },
               {
                 "group": [

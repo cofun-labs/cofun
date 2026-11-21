@@ -2,7 +2,8 @@ import { useAuth } from '@clerk/chrome-extension'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { track } from '../analytics'
 import { pageIdFromUrl } from '../notion/hosts'
-import { currentNotionPage, currentTabReadable, OPEN_A_PAGE, type OpenPage } from '../tools'
+import { currentNotionPage, currentTabKind, OPEN_A_PAGE, type OpenPage } from '../tools'
+import type { TabKind } from '@cofun/tools'
 import { AccountMenu } from './Account'
 import { Clips } from './Clips'
 import type { ChatSession } from './chat-session'
@@ -222,18 +223,18 @@ function ChatHeader({
 
 /**
  * The Notion page open in the current tab, if one is, as the tab says (no Notion request); and
- * otherwise whether the tab is on a site Notico could read. Follows the tab: switching tabs, the tab
+ * otherwise what Notico could read in the tab: a video, a page, or nothing. Follows the tab: switching tabs, the tab
  * going to another page or renaming it, or Chrome swapping in a prerendered tab for it (onReplaced,
  * which fires neither of the others).
  */
-function useTab(): { page?: OpenPage; readable: boolean } {
+function useTab(): { page?: OpenPage; readable?: TabKind } {
   const [tabPage, setTabPage] = useState<OpenPage>()
-  const [readable, setReadable] = useState(false)
+  const [readable, setReadable] = useState<TabKind>()
   useEffect(() => {
     let reads = 0
     const read = () => {
       const n = ++reads
-      void Promise.all([currentNotionPage().catch(() => undefined), currentTabReadable().catch(() => false)]).then(
+      void Promise.all([currentNotionPage().catch(() => undefined), currentTabKind().catch(() => undefined)]).then(
         ([page, web]) => {
           if (n !== reads) return
           setTabPage((was) => (was?.url === page?.url && was?.title === page?.title ? was : page))

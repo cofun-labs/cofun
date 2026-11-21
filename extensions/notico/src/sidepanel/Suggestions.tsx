@@ -1,4 +1,5 @@
 import type { Mode } from '@cofun/agent/mode'
+import type { TabKind } from '@cofun/tools'
 import type { OpenPage } from '../tools'
 // Notico's own icon, the one in the toolbar and the store; the Cofun mark alone means Cofun.
 import noticoIcon from '../../icons/icon.svg'
@@ -19,8 +20,8 @@ export interface StartContext {
   removed: boolean
   /** The user added pages to the question by hand. */
   added: boolean
-  /** With no Notion page in the tab: the tab is on a site Notico could read (read_current_tab). */
-  readable?: boolean
+  /** With no Notion page in the tab: what Notico could read there (read_current_tab), a YouTube video or a page. */
+  readable?: TabKind
   mode?: Mode
 }
 
@@ -60,6 +61,21 @@ function startSet({ page, removed, added, readable, mode }: StartContext): Start
       ? 'To search your Notion workspace, open a Notion page in this tab.'
       : 'To search or edit your Notion workspace, open a Notion page in this tab. To save this page to Notion, ' +
         'open the page to save it under, then add this tab with +.'
+    if (readable === 'video')
+      return {
+        heading: 'What do you want to know about this video?',
+        line: "This tab isn't a Notion page. Notico can read this video's transcript and search the web.",
+        suggestions: [
+          { icon: 'summary', text: 'Summarize this video' },
+          { icon: 'clock', text: 'List its key moments with their times' },
+          { icon: 'question', text: 'What does the video say about …' },
+          web,
+        ],
+        note: readOnly
+          ? note
+          : 'To search or edit your Notion workspace, open a Notion page in this tab. To save notes on this video ' +
+            'to Notion, open the page to save them under, then add this tab with +.',
+      }
     return readable
       ? {
           heading: 'What do you want to know about this page?',

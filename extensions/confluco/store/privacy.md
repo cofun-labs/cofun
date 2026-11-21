@@ -39,7 +39,7 @@ Reads the sign-in cookies that our own sign-in service (Clerk, on cofun.cc) sets
 ### scripting
 
 ```text
-On a site the user allowed, reads the text of the page in the current tab, or of a tab the user added to the conversation, inside that tab. On a Confluence site the user allowed, runs the requests that read, search, and, when the user asks for a change in so many words, change pages inside the user's own Confluence tab, with that tab's session, so no Confluence credentials leave the tab. With "Search with DuckDuckGo" on, reads the results in the DuckDuckGo tab it opened. When the user picks "Ask Confluco" on selected text, it reads that selection in the tab.
+On a site the user allowed, reads the text of the page in the current tab, or of a tab the user added to the conversation, inside that tab, and may request what that page shows from its site, from inside the tab with its session. On a Confluence site the user allowed, runs the requests that read, search, and, when the user asks for a change in so many words, change pages inside the user's own Confluence tab, with that tab's session, so no Confluence credentials leave the tab. With "Search with DuckDuckGo" on, reads the results in the DuckDuckGo tab it opened. When the user picks "Ask Confluco" on selected text, it reads that selection in the tab.
 ```
 
 ### contextMenus

@@ -2,8 +2,10 @@
 // read_tab, which read a tab's page on a site the user allowed (tab.ts); the tabs a question can be
 // sent with; and the notes a question carries about the tabs and the text selected on pages that
 // it was sent with. What depends on the extension's site is a parameter (see TabToolsOptions).
-import { defineTool, type AskOnCard, type QuestionPage, type Tool, type ToolContext } from '@cofun/agent'
+import { defineTool, ToolError, type AskOnCard, type QuestionPage, type Tool, type ToolContext } from '@cofun/agent'
 import { clipSelection, mayRead, readPage, readableSite, type TabPage, type TabWhere } from '../tab'
+import { YOUTUBE, videoIdOf, videoMarkdown } from '../youtube/video'
+import { readVideo, type TabVideo } from '../youtube/tab'
 import { z } from '../zod'
 import { KEPT_CHARS, withText } from './results'
 import { LOOK, READ, asData, asPageText, clip, count, noteTitle, noteUrl, on } from './shared'
@@ -21,14 +23,19 @@ async function currentTab(): Promise<{ title: string; url: string } | undefined>
   return tab?.url ? { title: tab.title ?? '', url: tab.url } : undefined
 }
 
+/** What read_current_tab would read in a tab: a YouTube video (see youtube/), or a page. */
+export type TabKind = 'video' | 'page'
+
 /**
- * Whether the current tab is one read_current_tab could read (once the user allows the site): what
- * the start of a chat offers there. Only the answer leaves here, never the tab's address or title.
+ * What read_current_tab could read in the current tab (once the user allows the site), or undefined
+ * when it can't read it: what the start of a chat offers there. Only the answer leaves here, never
+ * the tab's address or title.
  */
-export async function currentTabReadable(ownSite?: OwnSite): Promise<boolean> {
+export async function currentTabKind(ownSite?: OwnSite): Promise<TabKind | undefined> {
   const tab = await currentTab()
   // Only whether it can: the reason, which names the product, is not wanted here.
-  return !!tab && !ownSite?.(tab.url, 'the current tab') && 'origin' in readableSite(tab.url, '')
+  if (!tab || ownSite?.(tab.url, 'the current tab') || !('origin' in readableSite(tab.url, ''))) return undefined
+  return videoIdOf(tab.url) ? 'video' : 'page'
 }
 
 /** A tab the user can add to a question, and whether the extension may read its site already. */
@@ -250,11 +257,13 @@ export function tabTools<M>({ product, addedTabs, ownSite, beforeCurrentTab }: T
       'title and URL. Images are given by their alt text only. It reads what the user sees, pages they are ' +
       'signed in to included, but not what is inside frames, its navigation, or its footer. The first time a ' +
       `site is read, the user is asked to allow ${product} to read it. Use it when a question is about the page ` +
-      'the user is on, such as summarizing it. A long page is kept on the device and given in parts: its first ' +
-      'part comes with an id that read_result and search_result take.',
+      'the user is on, such as summarizing it. On a YouTube video (www.youtube.com/watch), it reads the video ' +
+      'instead: its title, channel, date, chapters, and description, and its transcript in paragraphs that start ' +
+      'with their time, or why it has none. A long page or transcript is kept on the device and given in parts: ' +
+      'its first part comes with an id that read_result and search_result take.',
     describe: (_args, details) => on(READ, details?.name, 'the current tab'),
     args: z.strictObject({}),
-    run: async (_args, _signal, context: ToolContext<M>) => {
+    run: async (_args, signal, context: ToolContext<M>) => {
       await beforeCurrentTab?.(context.memory)
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
       if (tab?.id === undefined || !tab.url) throw new Error('Could not tell which tab is the current one.')
@@ -272,9 +281,9 @@ export function tabTools<M>({ product, addedTabs, ownSite, beforeCurrentTab }: T
           `The current tab changed while ${product} waited (the user switched tabs or went to another page), so ` +
             'nothing was read. Ask them to go back to the page and ask again.',
         )
-      const page = await readPage(tab.id, site.origin, KEPT_CHARS, product)
-      if ('reason' in page) throw new Error(page.reason)
-      return pageRead(page, `Page in the current tab, on ${host}`, host, context, 'read_current_tab')
+      const read = await readTabContent(tab.id, site.origin, tab.url, product, 'the current tab', signal)
+      const header = `${'video' in read ? 'Video' : 'Page'} in the current tab, on ${host}`
+      return contentRead(read, header, host, context, 'read_current_tab')
     },
   })
 
@@ -291,7 +300,7 @@ export function tabTools<M>({ product, addedTabs, ownSite, beforeCurrentTab }: T
     args: z.strictObject({
       tab: z.number().int().describe('The number of the tab, as the note gave it.'),
     }),
-    run: async ({ tab }, _signal, context: ToolContext<M>) => {
+    run: async ({ tab }, signal, context: ToolContext<M>) => {
       const added = addedTabs(context.memory).get(tab)
       if (!added)
         throw new Error(
@@ -309,17 +318,17 @@ export function tabTools<M>({ product, addedTabs, ownSite, beforeCurrentTab }: T
       const site = readableSite(now.url, product, WHERE)
       if ('reason' in site) throw new Error(site.reason)
       await mayReadOrAsk(site.origin, context.ask, product)
-      const page = await readPage(tab, site.origin, KEPT_CHARS, product, WHERE)
-      if ('reason' in page) throw new Error(page.reason)
+      const read = await readTabContent(tab, site.origin, now.url, product, WHERE, signal)
       const host = new URL(site.origin).host
       // The model reads the tab, not the address: it is told when the tab went to another page.
       const moved =
-        page.url === added.url
+        ('video' in read ? read.url : read.page.url) === added.url
           ? []
           : [
               `[The tab went to another page since the user added it, when it showed ${JSON.stringify(clippedUrl(added.url))}.]`,
             ]
-      return pageRead(page, `Page in tab ${tab}, which the user added, on ${host}`, host, context, 'read_tab', moved)
+      const header = `${'video' in read ? 'Video' : 'Page'} in tab ${tab}, which the user added, on ${host}`
+      return contentRead(read, header, host, context, 'read_tab', moved)
     },
   })
 
@@ -341,6 +350,87 @@ async function mayReadOrAsk(origin: string, ask: AskOnCard, product: string): Pr
         `without it. If the user wants the page read, they can ask again: ${product} then asks them again to allow ` +
         "the site. Don't read this site again unless the user asks.",
     )
+}
+
+/**
+ * What a tab shows, read: a YouTube video on its watch page (see youtube/), else the page; a page
+ * with `note` when it is a video read as a page. Throws, for the model, when it can't be read, and
+ * stops the question when YouTube turned a request away or answered in a way that isn't understood.
+ */
+async function readTabContent(
+  tabId: number,
+  origin: string,
+  url: string,
+  product: string,
+  where: TabWhere,
+  signal?: AbortSignal,
+): Promise<TabVideo | { page: TabPage; note?: string }> {
+  const id = videoIdOf(url)
+  let note: string | undefined
+  if (id) {
+    const read = await readVideo(tabId, origin, id, product, where, signal)
+    if ('reason' in read) {
+      if (read.stops) throw new ToolError(read.stops.code, read.reason, { stopsQuestion: read.stops.message })
+      throw new Error(read.reason)
+    }
+    if ('video' in read) return read
+    // Read as YouTube shows it to the user, which says why it doesn't play.
+    note = `[YouTube gives no details of this video, so it is read as a page, with no transcript: ${noteTitle(read.unplayable)}]`
+  }
+  // A Stop while the video was read sends nothing more.
+  signal?.throwIfAborted()
+  const page = await readPage(tabId, origin, KEPT_CHARS, product, where)
+  if ('reason' in page) throw new Error(page.reason)
+  return { page, note }
+}
+
+/** What a tab shows, as the model gets it (see videoRead and pageRead). */
+function contentRead(
+  read: TabVideo | { page: TabPage; note?: string },
+  header: string,
+  host: string,
+  context: ToolContext,
+  tool: string,
+  notes: string[] = [],
+) {
+  if ('video' in read) return videoRead(read, header, context, tool, notes)
+  return pageRead(read.page, header, host, context, tool, [...notes, ...(read.note ? [read.note] : [])])
+}
+
+/**
+ * A YouTube video read from a tab, as the model gets it: `header` says which tab and site it came
+ * from, then the video's title and URL, `notes` about it, which transcript was read or why there is
+ * none, and the video as Markdown (see videoMarkdown); a long one's first part, with the rest kept
+ * on the device (see withText).
+ */
+async function videoRead(
+  { url, video, lines }: TabVideo,
+  header: string,
+  context: ToolContext,
+  tool: string,
+  notes: string[],
+) {
+  const link = `${YOUTUBE}/watch?v=${video.id}`
+  // YouTube's answer doesn't say which captions it gave: only which were asked for.
+  const transcript =
+    'track' in video.transcript
+      ? `[Transcript: as YouTube's transcript panel gives it, asked for YouTube's ` +
+        `${JSON.stringify(noteTitle(video.transcript.track.name))} captions, ` +
+        (video.transcript.track.auto
+          ? 'made by YouTube from the speech, so a word may be misheard. '
+          : "written for the video by its channel or YouTube's community. ") +
+        'Each paragraph starts with the time it is said, [mm:ss]. A link to a moment of the video adds its time ' +
+        `in seconds to the video's address: ${link}&t=754s for [12:34].]`
+      : `[No transcript: ${video.transcript.none} This is what the video's page says about it.]`
+  const head = [
+    // As JSON, so the title and URL stay inside their quotes and on their line.
+    `${header}: ${JSON.stringify({ title: clip(video.title, TITLE_CHARS), url: clip(url, TAB_URL_CHARS) })}`,
+    ...notes,
+    transcript,
+  ]
+  const text = videoMarkdown(video, lines)
+  const name = video.title.trim() || 'YouTube video'
+  return withText(head, { tool, title: video.title, url, markdown: true, text, chars: text.length }, name, context)
 }
 
 /**

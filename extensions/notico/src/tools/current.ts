@@ -4,13 +4,14 @@
 import {
   addedTabsNote,
   clip,
-  currentTabReadable as tabReadable,
+  currentTabKind as tabKind,
   noteTitle,
   noteUrl,
   openWebTabs as webTabs,
   selectionNotes,
   tabTools,
   type OwnSite,
+  type TabKind,
   type WebTab,
 } from '@cofun/tools'
 import type { QuestionPage } from '@cofun/agent'
@@ -55,11 +56,11 @@ export const { getCurrentTab, readCurrentTab, readTab } = tabTools<ToolMemory>({
 })
 
 /**
- * Whether the current tab is on another site than Notion that read_current_tab could read (once the
- * user allows the site): what the start of a chat offers there. Only the answer leaves here, never
- * the tab's address or title.
+ * What read_current_tab could read in the current tab on another site than Notion (once the user
+ * allows the site), a video or a page, or undefined when it can't: what the start of a chat offers
+ * there. Only the answer leaves here, never the tab's address or title.
  */
-export const currentTabReadable = (): Promise<boolean> => tabReadable(notionSite)
+export const currentTabKind = (): Promise<TabKind | undefined> => tabKind(notionSite)
 
 /** The tabs on other sites than Notion that the user can add to a question (see openWebTabs in @cofun/tools). */
 export const openWebTabs = (): Promise<WebTab[]> => webTabs(notionSite)
