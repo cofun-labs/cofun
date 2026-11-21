@@ -63,7 +63,7 @@
     // The only model clients can use. Its token prices must be listed in src/pricing.ts.
     "MODEL": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
     // Origins allowed to call (the token's azp claim). Comma-separated.
-    "CLERK_AUTHORIZED_PARTIES": "chrome-extension://moblfnjjebknafkgoifncombfnbfghom,https://api.cofun.cc,chrome-extension://eolgkcpoohaeaedpcnljkldkpnjcdemm",
+    "CLERK_AUTHORIZED_PARTIES": "chrome-extension://moblfnjjebknafkgoifncombfnbfghom,https://api.cofun.cc,chrome-extension://eolgkcpoohaeaedpcnljkldkpnjcdemm,chrome-extension://lfdnapbmoeabbmmfghiajdneabdblckk",
     // What is on sale: the live Stripe price of 1,000 credits for US$1 (one product, "Cofun Credits"),
     // and the quantities of it sold as packs: US$1, 5, 20, and 100. Price ids are not secret.
     // STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are worker secrets, never kept here (see

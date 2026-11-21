@@ -4,7 +4,7 @@
 
 A signed-in user's client can have the service read a public web page by its address: its title and main text, as anyone who opens the address without signing in would see it. Reading a page this way is free. A page drawn by scripts can be rendered in a browser instead, only while the user has credits left; a render costs what its browser time cost the service, at its provider's list price with nothing added. The service never keeps or logs the address or the page, only a record of each render.
 
-Which addresses to read is the client's choice (UC-NOTICO-PANEL-003); the service only refuses those that are never read.
+Which addresses to read is the client's choice (UC-WEBCO-PANEL-003); the service only refuses those that are never read.
 
 Key constraints:
 

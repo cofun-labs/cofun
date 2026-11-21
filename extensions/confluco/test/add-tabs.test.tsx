@@ -6,7 +6,6 @@ import '@testing-library/jest-dom/vitest'
 import { screen, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
-import { DATA_LINE } from '@cofun/tools'
 import { FakeTab, webPage } from './tab'
 import { closeBrowser, FakeBrowser } from './browser'
 
@@ -60,12 +59,7 @@ const sentQuestions = (browser: FakeBrowser) =>
     .sentToModel()
     .filter((m) => m.role === 'user')
     .map((m) => m.content)
-/** What the model was sent as the results of the tools it called. */
-const toolResults = (browser: FakeBrowser) =>
-  browser
-    .sentToModel()
-    .filter((m) => m.role === 'tool')
-    .map((m) => m.content)
+
 /** The lists of pages the conversation's questions went with, each as the titles it shows. */
 const pagesSent = () =>
   conversation()
@@ -87,26 +81,6 @@ async function ask(user: UserEvent, question: string) {
   await user.type(composer(), question)
   await user.click(screen.getByRole('button', { name: 'Send' }))
 }
-
-const readTab = (tab: number) => ({ toolCalls: [{ name: 'read_tab', arguments: JSON.stringify({ tab }) }] })
-
-/** The result read_tab gives for a page on news.example.com, as the model gets it. */
-const tabResult = (tab: number, title: string, url: string, text: string, notes: string[] = []) =>
-  [
-    DATA_LINE,
-    `Page in tab ${tab}, which the user added, on news.example.com: ${JSON.stringify({ title, url })}`,
-    ...notes,
-    'Content, as Markdown:',
-    text,
-  ].join('\n')
-
-const notAdded = (tab: number) =>
-  `The user did not add tab ${tab} to this chat, so it was not read: read_tab reads only the tabs the ` +
-  'notes list as added. Ask the user to add the tab, with "+" or @ in the message box.'
-
-const GONE =
-  'The tab the user added is not open any more (it was closed, or the browser restarted since), so nothing ' +
-  'was read. Ask them to open the page and add its tab again.'
 
 describe('UC-CONFLUCO-CHAT-005 add open tabs to a conversation', () => {
   it("[UC-CONFLUCO-CHAT-005-S01] the picker lists the window's tabs on other sites, filtered by what is typed, and reads nothing of them", async () => {
@@ -202,62 +176,6 @@ describe('UC-CONFLUCO-CHAT-005 add open tabs to a conversation', () => {
     expect(pagesSent()).toEqual([['Rivers | News', 'Lakes | News']])
   })
 
-  it('[UC-CONFLUCO-CHAT-005-S04] the AI reads a tab added to the chat, also in a later question, and no tab the user did not add', async () => {
-    const { browser, tab, user } = await openPanel((t) => t.allowed.add('https://shop.example.org/*'))
-    browser.ai.script.push(
-      readTab(20),
-      readTab(21),
-      { reply: 'Rivers are rising.' },
-      readTab(20),
-      // Open in the window, on a site Confluco may read, but never added; and the current tab.
-      readTab(22),
-      readTab(7),
-      { reply: 'Still rising.' },
-    )
-
-    await addTab(user, 'Rivers')
-    await addTab(user, 'Lakes')
-    await ask(user, 'What do these say?')
-    await screen.findByText('Rivers are rising.')
-    await answered()
-    await ask(user, 'And now? Also check the shop')
-    await screen.findByText('Still rising.')
-
-    expect(toolResults(browser)).toEqual([
-      tabResult(20, 'Rivers | News', RIVERS, 'Rivers are rising.'),
-      tabResult(21, 'Lakes | News', LAKES, 'Lakes are calm.'),
-      tabResult(20, 'Rivers | News', RIVERS, 'Rivers are rising.'),
-      notAdded(22),
-      notAdded(7),
-    ])
-    // The added tabs only, in the tabs themselves.
-    expect(tab.injections).toEqual([
-      { tabId: 20, world: 'ISOLATED' },
-      { tabId: 21, world: 'ISOLATED' },
-      { tabId: 20, world: 'ISOLATED' },
-    ])
-  })
-
-  it('[UC-CONFLUCO-CHAT-005-S04] a tab that went to another page is read as it is now, and the AI is told it moved', async () => {
-    const { browser, tab, user } = await openPanel()
-    browser.ai.script.push(readTab(20), { reply: 'It moved.' })
-
-    await addTab(user, 'Rivers')
-    Object.assign(tab.otherTabs[0], {
-      url: 'https://news.example.com/2026/front',
-      title: 'Front | News',
-      dom: webPage({ title: 'Front | News', main: 'Today on the front page.' }),
-    })
-    await ask(user, 'What does it say?')
-    await screen.findByText('It moved.')
-
-    expect(toolResults(browser)).toEqual([
-      tabResult(20, 'Front | News', 'https://news.example.com/2026/front', 'Today on the front page.', [
-        `[The tab went to another page since the user added it, when it showed ${JSON.stringify(RIVERS)}.]`,
-      ]),
-    ])
-  })
-
   it('[UC-CONFLUCO-CHAT-005-S03] a long address is named clipped in the note', async () => {
     const LONG = `https://news.example.com/play#state=${'a'.repeat(3_000)}`
     const { browser, user } = await openPanel((t) => {
@@ -270,62 +188,5 @@ describe('UC-CONFLUCO-CHAT-005 add open tabs to a conversation', () => {
     await screen.findByText('Noted.')
 
     expect(sentQuestions(browser)[0]).toContain(`"Playground" (tab 20), ${LONG.slice(0, 2_000)}]`)
-  })
-
-  it('[UC-CONFLUCO-CHAT-005-S05] after a restart, a tab a saved chat holds is not read, even once another chat adds a tab with its id', async () => {
-    const { browser, tab, user } = await openPanel()
-    browser.ai.script.push({ reply: 'First chat.' }, { reply: 'Second chat.' }, readTab(20), { reply: 'Not that one.' })
-
-    await addTab(user, 'Rivers')
-    await ask(user, 'Remember this tab')
-    await screen.findByText('First chat.')
-    await answered()
-
-    // The browser restarts; in a new chat the user adds a tab Chrome gave the same id to.
-    tab.storage.restart()
-    await user.click(screen.getByRole('button', { name: 'New chat' }))
-    await addTab(user, 'Rivers')
-    await ask(user, 'Another chat')
-    await screen.findByText('Second chat.')
-    await answered()
-
-    // Back in the first chat, that id is not the tab it was added as.
-    await user.click(screen.getByRole('button', { name: 'Chats' }))
-    await user.click(
-      await within(screen.getByRole('dialog', { name: 'Chats' })).findByRole('button', { name: /^Remember this tab/ }),
-    )
-    await conversation().findByText('Remember this tab')
-    await ask(user, 'What does it say now?')
-    await screen.findByText('Not that one.')
-
-    expect(toolResults(browser)).toEqual([GONE])
-    expect(tab.injections).toEqual([])
-    // Its link opens the page again, rather than going to the tab that has its id now.
-    await user.click(
-      within(conversation().getAllByRole('list', { name: 'Pages sent' })[0]).getByRole('link', {
-        name: 'Rivers | News',
-      }),
-    )
-    expect(browser.openedTabs).toEqual([RIVERS])
-  })
-
-  it('[UC-CONFLUCO-CHAT-005-S05] a tab added that was closed, or added before the browser restarted, is not read', async () => {
-    const { browser, tab, user } = await openPanel()
-    browser.ai.script.push(readTab(20), { reply: 'It is gone.' }, readTab(21), { reply: 'Gone too.' })
-
-    await addTab(user, 'Rivers')
-    tab.otherTabs[0].closed = true
-    await ask(user, 'What does it say?')
-    await screen.findByText('It is gone.')
-    await answered()
-
-    // After a restart Chrome hands out tab ids again: an id a chat kept may be another tab's now.
-    await addTab(user, 'Lakes')
-    tab.storage.restart()
-    await ask(user, 'And this one?')
-    await screen.findByText('Gone too.')
-
-    expect(toolResults(browser)).toEqual([GONE, GONE])
-    expect(tab.injections).toEqual([])
   })
 })

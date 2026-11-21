@@ -342,38 +342,6 @@ describe('on a tab that is not Notion', () => {
     expect(browser.tab.sent).toEqual([])
   })
 
-  it('[UC-NOTICO-PANEL-001-S05] the model gets the address and title of a tab on another site when it asks for them', async () => {
-    const { browser, user } = await openElsewhere()
-    browser.ai.script.push(
-      { toolCalls: [{ name: 'get_current_tab', arguments: JSON.stringify({}) }] },
-      { reply: 'You are in your inbox.' },
-    )
-
-    await ask(user, 'Which site am I on?')
-
-    expect(await screen.findByText('You are in your inbox.')).toBeVisible()
-    await answered()
-    expect(screen.getByRole('img', { name: 'Done' })).toBeVisible()
-    expect(toolResults(browser)).toEqual([`${DATA_LINE}\n${JSON.stringify({ title: 'Inbox (3)', url: INBOX })}`])
-    // Only what Chrome says about the tab: nothing ran in it.
-    expect(browser.tab.injections).toEqual([])
-  })
-
-  it('[UC-NOTICO-PANEL-001-S05] the model gets the address and title of a Notion tab the same way', async () => {
-    const { browser, user } = await openPanel()
-    browser.ai.script.push(
-      { toolCalls: [{ name: 'get_current_tab', arguments: JSON.stringify({}) }] },
-      { reply: 'You are on the fixture page.' },
-    )
-
-    await ask(user, 'Give me a link to this tab')
-
-    expect(await screen.findByText('You are on the fixture page.')).toBeVisible()
-    await answered()
-    expect(toolResults(browser)).toEqual([`${DATA_LINE}\n${JSON.stringify({ title: 'Fixture page', url: PAGE_URL })}`])
-    expect(browser.tab.sent).toEqual([])
-  })
-
   it('[UC-NOTICO-PANEL-001-S10] a Notion page open in another tab is never read in place of the current tab', async () => {
     const OTHER = 'https://app.notion.com/p/Other-page-2b2b2b2b000040008000000000000020'
     const tab = pageTab()

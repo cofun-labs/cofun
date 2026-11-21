@@ -134,7 +134,7 @@ function readRows(file: SourceFile, report: Report): Row[] {
 }
 
 /** What a test without a scenario guards against, in `[@no-uc:<kind>]` (docs/bdd.md#what-gets-a-test). */
-const NO_UC_KINDS = ['data', 'notion-safety', 'money', 'access', 'privacy', 'contract']
+const NO_UC_KINDS = ['data', 'notion-safety', 'money', 'access', 'privacy', 'contract', 'wiring']
 /** A tag at the start of a test's name: a scenario ID, or `@no-uc:` and the kind of harm. */
 const NAME_TAG = new RegExp(`^\\[(?:${SCENARIO_ID.replace('(', '(?:')}|@no-uc:([a-z-]*))\\]`)
 

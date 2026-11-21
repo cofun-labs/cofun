@@ -1,0 +1,6 @@
+{
+  "balance": 100000000,
+  "free": { "started": false, "toCome": 100000000, "lastsMs": 604800000 },
+  "grants": [],
+  "usage": { "days": 7, "byDay": [] }
+}

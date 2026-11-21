@@ -1,0 +1,20 @@
+<!--
+  Webco's icon, in the Cofun family design: a white page with a docked panel on the right.
+  The page carries Webco's pattern (an address bar and two text rows, any web page); the coral panel
+  carries the white Cofun mark (an open ring with a dot just outside its gap). A placeholder until
+  Webco's own color is chosen.
+  Export the manifest's PNG sizes with `pnpm --filter webco-extension icons`.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect x="8" y="16" width="112" height="96" rx="20" fill="#fff" />
+  <rect x="9.5" y="17.5" width="109" height="93" rx="18.5" fill="none" stroke="#b9b8b4" stroke-width="3" />
+  <path d="M72 16H100a20 20 0 0 1 20 20V92a20 20 0 0 1-20 20H72Z" fill="#F25C54" />
+  <rect x="20" y="36" width="42" height="12" rx="6" fill="none" stroke="#191919" stroke-width="3" />
+  <circle cx="27" cy="42" r="2.5" fill="#191919" />
+  <rect x="24" y="62" width="34" height="8" rx="4" fill="#c8c7c3" />
+  <rect x="24" y="80" width="24" height="8" rx="4" fill="#c8c7c3" />
+  <g transform="translate(96 64)">
+    <path d="M12.9 -1.6A13 13 0 1 1 1.6 -12.9" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" />
+    <circle cx="12" cy="-12" r="5" fill="#fff" />
+  </g>
+</svg>
