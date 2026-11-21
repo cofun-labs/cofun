@@ -45,8 +45,10 @@ import {
 } from '../notion/props'
 import { PAGE_TYPES, hexId, isEmoji, oneLine, pageToMarkdown, type Schema } from '../notion/markdown'
 import { activeNotionTab } from '../notion/tab'
+import { runsText } from '../notion/tree'
 import { loadMentioned, resolveDatabase } from './load'
 import type { SeenRow } from './memory'
+import { notUndoable, recordWrite } from './undo'
 import {
   CREATE,
   EDIT,
@@ -149,12 +151,14 @@ export const editPage = defineTool({
     // Every edit was a no-op: there is nothing to send, and the page stays as read, unchanged.
     if (!plan.operations.length) return { text: [header, ...plan.summary].join('\n'), details: { name } }
     signal?.throwIfAborted()
+    const titles = { [loaded.page.id]: read.title }
     try {
       await tab.client.submitTransaction(loaded.spaceId, plan.operations, 'Notico: edit_page')
     } catch (err) {
       // The edit may have been saved: a retry from the same read could apply it twice, so the
       // page must be read again first, which also shows whether it landed.
       if (err instanceof NotionError && err.code === 'outcome_unknown') memory.forgetRead(id)
+      if (err instanceof NotionError && err.mayHaveChanged) notUndoable(memory, `a change on ${quote(read.title)}`)
       throw err
     }
 
@@ -163,14 +167,16 @@ export const editPage = defineTool({
     // Blocks it changed or deleted need a new read before they are edited again.
     let next = forget(read, [...plan.deleted, ...plan.changed.filter((b) => b !== id)])
     let newRefs = ''
+    let after: RecordMap | undefined
     try {
-      const after = await tab.client.loadPage(id)
+      const loadedAfter = await tab.client.loadPage(id)
+      after = loadedAfter.recordMap
       // Only the blocks this edit created: anyone may have changed the others since it was saved,
       // so blocks it changed are left for the next read_page to show.
       const ours = new Set(plan.createdAll)
       next = mergeReads(
         next,
-        pageRead(after, pageToMarkdown(after), (b) => ours.has(b)),
+        pageRead(loadedAfter, pageToMarkdown(loadedAfter), (b) => ours.has(b)),
       )
       const refs = plan.created.map((c) => next.refs.get(c)).filter(Boolean)
       if (refs.length) newRefs = `New blocks: ${refs.map((r) => `^${r}`).join(', ')}.`
@@ -179,6 +185,7 @@ export const editPage = defineTool({
       // failure that stops the question is passed on, marked as having changed the page.
       if (err instanceof NotionError && err.stopsQuestion) {
         memory.remember(next)
+        notUndoable(memory, `a change on ${quote(read.title)}`)
         throw new NotionError(
           'notion_error',
           [
@@ -190,6 +197,11 @@ export const editPage = defineTool({
       }
     }
     memory.remember(next)
+    await recordWrite(memory, tab, loaded.spaceId, plan.operations, loaded.recordMap, {
+      page: loaded.page.id,
+      titles,
+      known: after,
+    })
     return {
       text: [header, ...plan.summary, newRefs, 'Read the page again to see the result.'].filter(Boolean).join('\n'),
       details: { name, changed: [hexId(id)] },
@@ -330,6 +342,7 @@ export const createPage = defineTool({
     try {
       await tab.client.submitTransaction(spaceId, operations, 'Notico: create_page')
     } catch (err) {
+      if (err instanceof NotionError && err.mayHaveChanged) notUndoable(memory, `the page “${title}”`)
       // A retry would create a second page if this one was saved: the agent must look first.
       if (err instanceof NotionError && err.code === 'outcome_unknown') {
         memory.forgetRead(parentId)
@@ -343,6 +356,7 @@ export const createPage = defineTool({
       }
       throw err
     }
+    await recordWrite(memory, tab, spaceId, operations, {}, { page: pageId, titles: { [pageId]: title } })
     const hex = hexId(pageId)
     const text = [
       target.table === 'collection'
@@ -527,16 +541,21 @@ export const updatePages = defineTool({
       summary.push(`^${hexId(u.id)}: ${changed.join(', ')}`, ...notes)
     })
     signal?.throwIfAborted()
+    // The pages by the titles they had, as the user knows them.
+    const titles = Object.fromEntries(ids.map((id) => [id, oneLine(runsText(blocks[id].properties?.title))]))
     try {
       // Setting values again does no harm, so after a lost answer the agent may simply retry.
       await tab.client.submitTransaction(spaceId, operations, 'Notico: update_pages')
     } catch (err) {
       // Whether a rename landed is unknown: the page's read, and the title it shows, go too.
       if (err instanceof NotionError && err.code === 'outcome_unknown') for (const id of ids) memory.forgetRead(id)
+      if (err instanceof NotionError && err.mayHaveChanged)
+        notUndoable(memory, `changes to ${count(ids.length, 'page')}`)
       throw err
     } finally {
       for (const id of ids) memory.forgetSeenRow(id)
     }
+    await recordWrite(memory, tab, spaceId, operations, { block: blocks }, { titles })
     // A read's title shows in later previews; keep it current.
     for (const u of updates) if (u.title !== undefined) memory.renameRead(u.id, u.title.shown)
     return {

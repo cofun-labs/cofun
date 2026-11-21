@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useId, useState, useSyncExternalStore, ty
 import type { QuestionCost, QuestionDetails } from '@cofun/agent'
 import { track } from '../analytics'
 import { chatTitle, replyTitle, savePage, touchedBy, webTouchedBy, type SavedTurn } from '../tools'
-import type { ChatSession, ChatSnapshot, Part, Reply, SaveState, Shown, ShownTool } from './chat-session'
+import type { ChatSession, ChatSnapshot, Part, Reply, SaveState, Shown, ShownTool, UndoView } from './chat-session'
 import { Icon } from './icons'
 import { Markdown } from './Markdown'
 import { useMenu } from './menu'
@@ -28,7 +28,7 @@ export const MessageList = memo(function MessageList({
   /** The element the list scrolls in. */
   scrollRef: RefObject<HTMLElement | null>
 }) {
-  const { messages, status, saves } = useSyncExternalStore(chat.subscribe, chat.getSnapshot)
+  const { messages, status, saves, undos } = useSyncExternalStore(chat.subscribe, chat.getSnapshot)
   const busy = status !== 'ready'
   const stopping = status === 'stopping'
   // Only when the conversation changes: closing the session list leaves the chat where the user had scrolled it.
@@ -37,6 +37,7 @@ export const MessageList = memo(function MessageList({
   }, [messages])
   // One function for the chat's life, so a reply that hasn't changed is not drawn again.
   const onSave = useCallback((what: number) => saveToNotion(chat, what), [chat])
+  const onUndo = useCallback((turn: string) => void chat.undo(turn), [chat])
 
   return messages.map((m, i) =>
     m.role === 'user' ? (
@@ -100,6 +101,10 @@ export const MessageList = memo(function MessageList({
             saveBlocked={saveBlocked}
             replySave={saves[String(i)]}
             onSave={onSave}
+            undo={m.turn ? undos[m.turn] : undefined}
+            // An undo waits for the chat's question, and the chat for it.
+            undoBlocked={busy}
+            onUndo={onUndo}
           />
         </div>
       </div>
@@ -186,6 +191,9 @@ const ReplyFoot = memo(function ReplyFoot({
   saveBlocked,
   replySave,
   onSave,
+  undo,
+  undoBlocked,
+  onUndo,
 }: {
   reply: Reply
   ended: boolean
@@ -194,30 +202,102 @@ const ReplyFoot = memo(function ReplyFoot({
   /** How saving this reply to Notion is going. */
   replySave?: SaveState
   onSave: (what: number) => void
+  /** What undoing what the question changed in Notion does, when there is something to undo. */
+  undo?: UndoView
+  undoBlocked: boolean
+  onUndo: (turn: string) => void
 }) {
+  const [confirming, setConfirming] = useState(false)
   if (!ended) return null
   const text = replyMarkdown(reply.parts)
   // What it touched in Notion and on the web leads its details, in the "…", so the row stays quiet.
   const details = [...touched(reply).map((text) => ({ text })), ...detailRows(reply.details)]
   const cost = reply.details?.cost
-  if (!text && !details.length && !cost) return null
+  if (!text && !details.length && !cost && !undo) return null
+  const turn = reply.turn
   return (
-    <div className="reply-foot">
-      {text && <CopyButton text={text} />}
-      {text && (
-        <SaveButton
-          what="reply"
-          className="reply-action"
-          state={replySave}
-          blocked={saveBlocked}
-          onSave={() => onSave(index)}
-        />
+    <>
+      <div className="reply-foot">
+        {text && <CopyButton text={text} />}
+        {text && (
+          <SaveButton
+            what="reply"
+            className="reply-action"
+            state={replySave}
+            blocked={saveBlocked}
+            onSave={() => onSave(index)}
+          />
+        )}
+        {undo && turn && (
+          <UndoButton view={undo} blocked={undoBlocked} open={confirming} onOpen={() => setConfirming(!confirming)} />
+        )}
+        {cost && <CostNote cost={cost} />}
+        {details.length > 0 && <ReplyDetails rows={details} />}
+      </div>
+      {undo && turn && confirming && undo.state === 'ready' && (
+        <div className="tool-confirm undo-confirm" role="group" aria-label="Undo what this reply changed in Notion?">
+          <span>Undo what this reply changed in Notion?</span>
+          <ul className="undo-lines">
+            {undo.lines.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          <span className="tool-confirm-note">Nothing is undone if one of these pages was changed since.</span>
+          <div className="tool-answers">
+            <button onClick={() => setConfirming(false)}>Cancel</button>
+            <button
+              className="primary"
+              disabled={undoBlocked}
+              onClick={() => {
+                setConfirming(false)
+                onUndo(turn)
+              }}
+            >
+              Undo
+            </button>
+          </div>
+        </div>
       )}
-      {cost && <CostNote cost={cost} />}
-      {details.length > 0 && <ReplyDetails rows={details} />}
-    </div>
+      {undo?.state === 'undoing' && <div className="note">Undoing the changes…</div>}
+      {undo?.state === 'undone' && <div className="note">The changes were undone.</div>}
+      {undo?.error && (
+        <div className="error" role="alert">
+          {undo.error}
+        </div>
+      )}
+    </>
   )
 })
+
+/** The icon that offers to undo what a question changed in Notion; it opens the question that asks first. */
+function UndoButton({
+  view,
+  blocked,
+  open,
+  onOpen,
+}: {
+  view: UndoView
+  blocked: boolean
+  open: boolean
+  onOpen: () => void
+}) {
+  if (view.state === 'undone') return null
+  const busy = view.state === 'undoing'
+  const tip = busy ? 'Undoing the changes…' : blocked ? 'Wait for the reply to finish' : 'Undo changes'
+  return (
+    <button
+      type="button"
+      className="reply-action"
+      aria-label="Undo changes"
+      aria-expanded={open}
+      aria-disabled={busy || blocked ? true : undefined}
+      data-tip={tip}
+      onClick={() => !busy && !blocked && onOpen()}
+    >
+      <Icon name="undo" />
+    </button>
+  )
+}
 
 /** Copies `text` to the clipboard, and says for a moment whether it worked. */
 function CopyButton({ text }: { text: string }) {
