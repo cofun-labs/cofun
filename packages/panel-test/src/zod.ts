@@ -1,11 +1,9 @@
-// zod, set up for the package. Import `z` from here, never from 'zod' (a lint error): the setting
-// below must be in place before any schema is built.
+// zod, set up for the package. Import `z` from here, never from 'zod' (a lint error), as in every
+// package. The harness runs only in vitest, where no content security policy applies; it sets zod up
+// as the extensions do (jitless, so it never compiles parsers with `new Function`) so that whichever
+// module imports zod first, the panel under test parses with the same zod it ships with.
 import { z } from 'zod'
 
-// zod would otherwise compile its object parsers with `new Function`, which an extension's content
-// security policy forbids; even its probe for whether that works is reported as a violation. zod
-// reads this when a schema is built. The package sets it itself, so its schemas are safe whichever
-// module of the extension imports zod first.
 z.config({ jitless: true })
 
 export { z }
