@@ -44,12 +44,13 @@ Commands:
                                and check it is enabled
   panel [url]                  Open the side panel for the Notion tab this tool opened, first going to
                                url if given (a tab is opened if there is none yet); starts a new chat.
-                               Only on a page or database this tool created. For Confluco,
-                               opens the side panel on example.com with no URL argument
+                               Only on a page or database this tool created. For Confluco and
+                               Webco, opens the side panel on example.com with no URL argument
   elsewhere                    Bring a tab on another site (example.com) to the front, opening it if
                                there is none; the side panel stays open with its chat, or opens
                                with a new one if none was open. The Notion tools can't run there
   tab <url>                    Open a tab on another site in the background, to add to a question
+                               (Notico and Webco)
   add <title>                  Add the open tab whose title starts with <title> to the next question,
                                from the side panel's "+" picker; a site not allowed yet shows Chrome's
                                prompt, which a person must answer
@@ -68,7 +69,8 @@ Commands:
   lock refresh|release|status
 
 Options:
-  --extension <name>           notico (default) or confluco (reload, panel, ask, close, lock)
+  --extension <name>           notico (default), confluco (reload, panel, ask, close, lock), or
+                               webco (those, and tab and add)
   --owner <name>               Lock owner (default: $E2E_OWNER, else the git branch)
 
 Environment:
@@ -119,10 +121,14 @@ export function parseArgs(argv: string[]): Parsed {
   flags.delete('--owner')
   const extension = flags.get('--extension') ?? 'notico'
   flags.delete('--extension')
-  if (extension !== 'notico' && extension !== 'confluco') throw new UsageError(`Unknown extension: ${extension}.`)
+  if (extension !== 'notico' && extension !== 'confluco' && extension !== 'webco')
+    throw new UsageError(`Unknown extension: ${extension}.`)
   const [name, ...rest] = positional
   if (!name) return { command: { name: 'help' }, owner, extension }
   if (extension === 'confluco' && ['elsewhere', 'tab', 'add', 'page', 'db', 'trash'].includes(name)) {
+    throw new UsageError(`${name} only goes with --extension notico.`)
+  }
+  if (extension === 'webco' && ['elsewhere', 'page', 'db', 'trash'].includes(name)) {
     throw new UsageError(`${name} only goes with --extension notico.`)
   }
   if (name !== 'ask') {
@@ -160,7 +166,7 @@ export function parseArgs(argv: string[]): Parsed {
     case 'panel': {
       most(1)
       const [url] = rest
-      if (extension === 'confluco' && url !== undefined) throw new UsageError('Confluco panel takes no URL.')
+      if (extension !== 'notico' && url !== undefined) throw new UsageError(`${extension} panel takes no URL.`)
       if (url !== undefined && !isNotion(url)) throw new UsageError(`Not a Notion URL: ${url}`)
       return { command: { name, url }, owner, extension }
     }

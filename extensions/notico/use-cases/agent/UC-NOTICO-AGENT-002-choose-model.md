@@ -4,12 +4,12 @@
 
 A signed-in user can have questions answered by a model of their own choice, through their own OpenRouter account and key, instead of by Cofun's hosted model (Auto, the default). Settings decides which providers and models are offered, and saves a key only after checking that it works; the composer's model menu picks which of them answers the next question, and the conversation carries on across a switch.
 
-The user pays OpenRouter for their model and spends credits only on web pages rendered and web searches (UC-NOTICO-PANEL-003, UC-NOTICO-PANEL-004). Settings are kept on this device for the account that set them up.
+The user pays OpenRouter for their model and spends credits only on web pages rendered and web searches. Settings are kept on this device for the account that set them up.
 
 Key constraints:
 
 - The user's own key leaves the device only in requests to the provider it belongs to. It never reaches Cofun's service.
-- A question answered by the user's own model spends no credits on its model calls; a web page rendered or a web search made for it costs credits as it does on the hosted model (UC-NOTICO-PANEL-003, UC-NOTICO-PANEL-004).
+- A question answered by the user's own model spends no credits on its model calls; a web page rendered or a web search made for it costs credits as it does on the hosted model.
 - Checking a key asks no model anything, so it costs nothing.
 
 ## Scenarios

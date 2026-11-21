@@ -227,6 +227,7 @@ describe('worker API', () => {
   it.each([
     ['/login?app=notico', 'Notico by Cofun', '/login?app=notico'],
     ['/login?app=confluco', 'Confluco by Cofun', '/login?app=confluco'],
+    ['/login?app=webco', 'Webco by Cofun', '/login?app=webco'],
     ['/login', 'Cofun', '/login'],
     ['/login?app=unknown', 'Cofun', '/login'],
   ])(

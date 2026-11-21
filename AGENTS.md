@@ -1,6 +1,6 @@
 # Cofun
 
-Cofun: Chrome extensions that each open an AI side panel next to one kind of page, backed by one Cloudflare Worker they share. The repository holds the extensions, one per folder in `extensions/` (Notico, for Notion, in `extensions/notico/`), and the worker. This file covers the development workflow and coding conventions.
+Cofun: Chrome extensions that each open an AI side panel next to one kind of page, backed by one Cloudflare Worker they share. The repository holds the extensions, one per folder in `extensions/` (Notico, for Notion, in `extensions/notico/`; Webco, for any web page, in `extensions/webco/`, with only what every extension shares), and the worker. This file covers the development workflow and coding conventions.
 
 **Before starting work, read [docs/architecture.md](docs/architecture.md)** for the architecture, auth flow, and code layout. The other docs:
 
@@ -30,7 +30,7 @@ Update `docs/architecture.md` only when a change adds, moves, or removes a modul
      ```
 
 2. **Cover business rules with scenarios.** Ask one question: does this change add or change a business rule a user can notice? If not, as with most bug fixes and refactors, no use case changes. If so:
-   - A scenario covers it, in `extensions/<name>/use-cases/{domain}/`, in `packages/<name>/use-cases/{domain}/` for a rule a shared package owns, or in `worker/use-cases/{domain}/` for a rule only the worker decides ([Products](docs/bdd.md#products)).
+   - A scenario covers it, in `extensions/<name>/use-cases/{domain}/`, in `extensions/webco/use-cases/{domain}/` for a rule of what every extension shares that the side panel's tests verify, in `packages/<name>/use-cases/{domain}/` for a rule a shared package owns and verifies in its own tests, or in `worker/use-cases/{domain}/` for a rule only the worker decides ([Products](docs/bdd.md#products)).
    - Reuse or edit a scenario that already says it, or add one with a priority (P0/P1/P2) under its strategy (`api-test` or `ai-e2e`), marked 🚧 until verified, then ✅. [docs/bdd.md](docs/bdd.md) says how to write them.
 
 3. **Implement with tests.** A test guards each such rule:
@@ -40,7 +40,7 @@ Update `docs/architecture.md` only when a change adds, moves, or removes a modul
      it('[UC-NOTICO-CHAT-001-S01] signed-in user gets a streamed reply', async () => {
      ```
    - `ai-e2e` scenarios are verified by an agent driving a real browser with `pnpm e2e`, and the run is recorded in the PR ([Running an `ai-e2e` scenario](docs/bdd.md#running-an-ai-e2e-scenario)).
-   - Implementation details worth guarding get standalone tests named with `[@no-uc:<kind>]` for the harm they guard (`data`, `notion-safety`, `money`, `access`, `privacy`, or `contract`; see [What gets a test](docs/bdd.md#what-gets-a-test)).
+   - Implementation details worth guarding get standalone tests named with `[@no-uc:<kind>]` for the harm they guard (`data`, `notion-safety`, `money`, `access`, `privacy`, `contract`, or `wiring`; see [What gets a test](docs/bdd.md#what-gets-a-test)).
    - `pnpm check` fails on a test that names neither a scenario ID nor a kind, on an `api-test` scenario marked ✅ with no test named with its ID, and on a scenario row it can't read ([Coverage check](docs/bdd.md#coverage-check)). When a scenario's ID changes, rename its tests; when a scenario is deleted, delete its tests or take the ID out of their names.
    - Gaps that slip past a PR are found by the `/bdd-audit` skill, run before a release or after a large feature ([Coverage audit](docs/bdd.md#coverage-audit)), not by per-PR bookkeeping.
 
@@ -106,6 +106,7 @@ An extension's Chrome Web Store privacy policy is written in two parts: [PRIVACY
 [docs/architecture.md](docs/architecture.md) describes the design; these are the rules a change must keep.
 
 - **One extension per folder.** Each extension keeps its own app (side panel, prompt, site layer, tools, manifest, usage events) and never imports another extension; the agent runtime it runs them on is the shared `@cofun/agent`.
+- **Webco adds no logic of its own.** Webco is the side panel with only what every extension shares: beyond what each extension keeps (its manifest, prompt, suggestions, usage events, and, until it is shared, its copy of the side panel), it wires shared code together, so its tests stand for the shared code.
 - **Only libraries the extensions call are shared**, as workspace packages in `packages/` (`@cofun/worker-client`, the client for the worker, with how the panel words the credits; `@cofun/agent`, the agent runtime and tool framework, with the model settings and the mode each account keeps; `@cofun/tools`, the generic tools built on that framework, the site layers they read the web with, and the handoff of text selected with the context menu; and `@cofun/analytics`, which sends an extension's usage events to PostHog). One package is for tests only: `@cofun/panel-test`, the side panel's UI test harness, which an extension's tests start with the extension's own tab fake, side panel page, service worker, and host permissions. A package takes what is particular to an extension as explicit parameters (the product name, the client name, the extension's own memory of a chat, its own site), never a product config, and never imports an extension. Its rules are tested once, in its own `test/` (and `use-cases/`, when it owns a business rule); an extension tests only how it uses it.
 - **A site is called only through its site layer**: one module knows the site's endpoints and request shapes (Notico's `src/notion/api.ts`), and requests run inside the user's tab for that site (`src/<site>/tab.ts`, `chrome.scripting` in the ISOLATED world), so they go to that tab's host with its session. Tools never `fetch` the site's URLs themselves. Never use `chrome.debugger`: it shows a permanent "debugging this browser" banner.
 - **Every worker route under `/v1` sits behind the session check** (`src/routes/session.ts`); `worker/test/session.test.ts` checks that each refuses a request without a session.
@@ -160,6 +161,7 @@ How the fakes and test helpers fit together is in [Testing](docs/development.md#
 
 - **Write a test only when it earns its place.** More tests are not better: each one costs time to run, read, and change. [What gets a test](docs/bdd.md#what-gets-a-test) decides.
 - **Tests live with the package they cover**: `extensions/<name>/test/`, `packages/<name>/test/`, and `worker/test/`. Backend tests are REST integration tests that call the Hono app over HTTP and assert on status codes and JSON bodies.
+- **What every extension shares is tested once, in Webco** (`extensions/webco/test/`, and its `ai-e2e` runs). Another extension tests its own site, the paths only it uses, and, in one `[@no-uc:wiring]` test, that it wires the shared code in. A part of the side panel that is still a copy in each extension keeps its tests in each until it is shared ([Products](docs/bdd.md#products)).
 - **No mocking.** No `vi.mock()` and no spies. Replace an external dependency with a fake that implements the same interface, injected through `env`. The one module replaced whole is Clerk's React SDK, for the UI tests only; replace no other module this way.
 - **UI tests run the whole side panel and act as a user** ([Testing the side panel's UI](docs/bdd.md#testing-the-side-panels-ui)). Never test a component on its own, and find things by role, accessible name, or visible text, never through component state, the agent, the session store, or a test id. If an element can't be found that way, improve its accessibility.
 - **Tests never wait for time to pass.** Use a fake clock with an explicit start time and move it: no sleeps, and no assertion that depends on how long something took. Waiting for the screen to change is fine.
