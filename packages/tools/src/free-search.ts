@@ -2,7 +2,8 @@
 // the user's own browser, free, once the user switched it on in Settings (UC-WEBCO-PANEL-004). The
 // switch is kept in chrome.storage.local per account, on this device only: one account's choice to
 // send its queries to DuckDuckGo never carries over to another signed in on the same profile. It
-// counts only while Chrome still grants the access to DuckDuckGo it needs, which is the profile's. Read as each search starts, so switching it applies at once.
+// counts only while Chrome still grants the access to DuckDuckGo it needs, which is the profile's.
+// Read as each search starts, so switching it applies at once.
 import { ToolError, type WebAccess } from '@cofun/agent'
 import { DuckDuckGoError, mayUseDuckDuckGo, searchDuckDuckGo } from './duckduckgo/search'
 
