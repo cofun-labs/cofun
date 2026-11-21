@@ -18,7 +18,8 @@ type Fields = z.output<typeof Fields>
  * for a page, to name for the user. `created`: the question made it, under `parent` (in a page or
  * the workspace, or a database's collection for a row); `page` says it is a page or database, which
  * the undo moves to the trash, rather than content of a page, which it deletes. `removed`: the
- * question deleted it from `parent`, where it came after `after` and before `before`. `props` and
+ * question deleted it from `parent`, where it came after the blocks `after` and before the blocks
+ * `before`, nearest first (several, as a neighbour may be gone or made by the question). `props` and
  * `format`: the values the question changed, as they were before it. `now`: what the question left,
  * as read back after its last write: the values it changed, or for a block it made, its properties
  * and content. Unset when it could not be read back: the block can't be checked, so nothing is undone.
@@ -27,9 +28,7 @@ const Change = z.strictObject({
   id: z.string(),
   page: z.string(),
   created: z.strictObject({ parent: z.string(), table: z.enum(['block', 'collection']), page: z.boolean() }).optional(),
-  removed: z
-    .strictObject({ parent: z.string(), after: z.string().optional(), before: z.string().optional() })
-    .optional(),
+  removed: z.strictObject({ parent: z.string(), after: z.array(z.string()), before: z.array(z.string()) }).optional(),
   props: Fields.optional(),
   format: Fields.optional(),
   now: z.strictObject({ props: Fields, format: Fields, content: z.array(z.string()) }).optional(),
@@ -171,13 +170,17 @@ function json(value: unknown): z.output<typeof Fields>[string] {
   return parsed.data
 }
 
-/** The blocks next to `child` in `parent`'s list, as read: where it goes back. */
+/** How many blocks on each side of a deleted one are kept, to find where it goes back. */
+const NEIGHBOURS = 20
+
+/** The blocks next to `child` in `parent`'s list, as read, nearest first: where it goes back. */
 function neighbours(blocks: Record<string, Block>, parent: string, child: string) {
   const list = (blocks[parent].content ?? []).filter((c) => c === child || blocks[c]?.alive !== false)
   const at = list.indexOf(child)
+  if (at < 0) return { after: [], before: [] }
   return {
-    ...(at > 0 && { after: list[at - 1] }),
-    ...(at >= 0 && at < list.length - 1 && { before: list[at + 1] }),
+    after: list.slice(Math.max(0, at - NEIGHBOURS), at).reverse(),
+    before: list.slice(at + 1, at + 1 + NEIGHBOURS),
   }
 }
 
@@ -220,6 +223,9 @@ export function merge(prior: Change[], next: Change[]): Change[] {
       }
       was.removed = c.removed
       was.now = undefined
+      // Deletions stay in the order they were made, which undoing goes back through.
+      changes.delete(c.id)
+      changes.set(c.id, was)
     }
     if (was.created) continue
     for (const field of ['props', 'format'] as const) if (c[field]) was[field] = { ...c[field], ...was[field] }
@@ -307,11 +313,15 @@ export interface UndoPlan {
 export function planUndo(q: QuestionChanges, current: RecordMap, userId: string | undefined): UndoPlan {
   const blocks = current.block ?? {}
   const changed = new Set<string>()
+  const unread = new Set<string>()
   const made = new Set(q.changes.flatMap((c) => (c.created ? [c.id] : [])))
   for (const c of q.changes) {
     const block = blocks[c.id]
+    if (!block || (c.removed && !blocks[c.removed.parent])) {
+      unread.add(c.page)
+      continue
+    }
     const ok = (() => {
-      if (!block) return false
       if (c.removed) {
         const parent = blocks[c.removed.parent]
         // Still deleted, and where it goes back is still there.
@@ -329,6 +339,11 @@ export function planUndo(q: QuestionChanges, current: RecordMap, userId: string 
     })()
     if (!ok) changed.add(c.page)
   }
+  if (unread.size)
+    throw new UndoError(
+      `Nothing was undone: ${[...unread].map((p) => named(q, p)).join(', ')} can't be read with the Notion account ` +
+        'of this tab. Open Notion signed in to the account the changes were made with, and undo again.',
+    )
   if (changed.size)
     throw new UndoError(
       `Nothing was undone: ${[...changed].map((p) => named(q, p)).join(', ')} changed since, ` +
@@ -363,18 +378,20 @@ export function planUndo(q: QuestionChanges, current: RecordMap, userId: string 
       touched.add(parent)
     }
   }
-  for (const c of q.changes) {
-    if (!c.removed) continue
-    const { parent, after, before } = c.removed
+  // Deleted blocks come back newest deletion first, so each finds the neighbours it had then.
+  for (const c of q.changes.filter((c) => c.removed).reverse()) {
+    const { parent, after: afterAll, before: beforeAll } = c.removed!
     const children = list(parent)
+    const after = afterAll.find((b) => children.includes(b))
+    const before = beforeAll.find((b) => children.includes(b))
     let at: number
-    if (after && children.includes(after)) {
+    if (after) {
       operations.push(...op.restore(c.id, op.listAfter(parent, c.id, after)))
       at = children.indexOf(after) + 1
-    } else if (before && children.includes(before)) {
+    } else if (before) {
       operations.push(...op.restore(c.id, op.listBefore(parent, c.id, before)))
       at = children.indexOf(before)
-    } else if (!after && children.length) {
+    } else if (!afterAll.length && children.length) {
       operations.push(...op.restore(c.id, op.listBefore(parent, c.id, children[0])))
       at = 0
     } else {

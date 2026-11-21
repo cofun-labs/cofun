@@ -153,6 +153,43 @@ describe('UC-NOTICO-NOTION-013 undo what a question changed', () => {
     expect((await failure(chat.run(undoChangesTool, {}))).message).toMatch(/nothing/i)
   })
 
+  it('[UC-NOTICO-NOTION-013-S01] blocks deleted by separate edits come back in their order, also next to blocks it added', async () => {
+    const ws = workspace()
+    open(ws)
+    const before = await body()
+    await read()
+    // Next to the block deleted below, so its nearest neighbour is gone when it comes back.
+    await chat.run(editPage, {
+      page: hex(PAGE),
+      edits: [{ action: 'insert', block: '^00000002', markdown: 'Added after Friday' }],
+    })
+    await chat.run(editPage, { page: hex(PAGE), edits: [{ action: 'delete', block: '^00000002' }] })
+    await read()
+    await chat.run(editPage, { page: hex(PAGE), edits: [{ action: 'delete', block: '^00000003' }] })
+    await read()
+    await chat.run(editPage, { page: hex(PAGE), edits: [{ action: 'delete', block: '^00000004' }] })
+    endQuestion('q1')
+
+    await undo()
+    expect(await body()).toBe(before)
+    expect(ws.records.get(PAGE)!.content).toEqual([id(1), id(2), id(3), id(4), CHILD])
+  })
+
+  it('[UC-NOTICO-NOTION-013-S03] refuses, changing nothing, when the pages can’t be read in this tab', async () => {
+    const ws = workspace()
+    open(ws)
+    await chat.run(updatePages, { pages: [{ page: hex(PAGE), title: 'Renamed' }] })
+    endQuestion('q1')
+    // Notion answers for another account, which can't see the page.
+    ws.records.delete(PAGE)
+    const transactions = ws.transactions.length
+    expect((await failure(chat.run(undoChangesTool, {}))).message).toBe(
+      "Nothing was undone: “Fixture page” can't be read with the Notion account of this tab. Open Notion signed " +
+        'in to the account the changes were made with, and undo again.',
+    )
+    expect(ws.transactions).toHaveLength(transactions)
+  })
+
   it('[UC-NOTICO-NOTION-013-S02] moves the page and the row it created to the trash, and sets back titles, icons, and values', async () => {
     const ws = workspace()
     open(ws)
