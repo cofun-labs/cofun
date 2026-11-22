@@ -1,7 +1,6 @@
 // The pages a Confluence tool may name: one a Confluence tool returned in this question, or a link to
 // a page on the captured site. Reads and writes take a page the same way.
-import { linkedPage } from '../confluence/page-writes'
-import { pageReference, type PageReference } from '../confluence/references'
+import { linkedPage, pageReference, type PageReference } from '../confluence/references'
 import type { ConfluenceTab } from '../confluence/tab'
 import { z } from '../zod'
 import type { ToolMemory } from './memory'
@@ -17,7 +16,9 @@ function requirePage(memory: ToolMemory, page?: PageReference) {
   if (!page || memory.confluenceResources.has(JSON.stringify([page.instance, page.id]))) return
   if (memory.confluenceResources.has(folderKey(page)))
     throw new Error('This reference is a folder. Pass it to browse_page_tree as folder.')
-  throw new Error('Use a page reference returned by a Confluence tool during this question, or omit page.')
+  throw new Error(
+    'Use a page reference returned by a Confluence tool during this question, a link to a page on this Confluence site, or omit page.',
+  )
 }
 
 /** A page a call names: a reference from a Confluence tool, or a link to a page on this site. */

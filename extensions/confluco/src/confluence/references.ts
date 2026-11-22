@@ -10,6 +10,23 @@ export const pageReference = z.strictObject({
 })
 export type PageReference = z.output<typeof pageReference>
 
+/** The page a link on the tab's Confluence site names, if it names one there. */
+export function linkedPage(tab: ConfluenceTab, link: string): PageReference | undefined {
+  const url = URL.parse(link)
+  if (!url) return undefined
+  const { origin, path } = tab.instance
+  const at = url.pathname.slice(path.length)
+  const ids = url.searchParams.getAll('pageId')
+  const id =
+    at === '/pages/viewpage.action' && ids.length === 1
+      ? ids[0]
+      : /^\/spaces\/[^/]+\/pages\/(\d{1,20})(?:\/[^/]+)?\/?$/.exec(at)?.[1]
+  const ref = pageReference.safeParse({ instance: origin + path, id })
+  if (!ref.success || url.origin !== origin || url.username || url.password || !url.pathname.startsWith(path + '/'))
+    return undefined
+  return ref.data
+}
+
 /** A Cloud folder in the page tree, with the same site binding as a page reference. */
 export const folderReference = z.strictObject({
   instance: z.string().min(1).max(2048).describe('The instance base URL from the folder reference.'),

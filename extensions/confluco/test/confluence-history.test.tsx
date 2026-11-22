@@ -301,7 +301,7 @@ describe('published page labels', () => {
     expect(browser.workspaceRequests).toEqual([])
   })
 
-  it('[@no-uc:wiring] lists the labels of a page named by a link on this site', async () => {
+  it('[UC-CONFLUCO-CONFLUENCE-001-S08] lists the labels of a page named by a link on this site', async () => {
     const { browser, user } = await panel()
     const other = { ...current, id: '43', title: 'Other page' }
     browser.confluenceResponse = (url) =>
