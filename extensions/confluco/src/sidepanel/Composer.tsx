@@ -2,14 +2,6 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Keyb
 import type { QuestionPage, QuestionSelection } from '@cofun/agent'
 import type { Mode } from '@cofun/agent/mode'
 import { track } from '../analytics'
-import type { AttachmentUpload } from '../confluence/attachments'
-import type { Instance } from '../confluence/instance'
-import {
-  attachmentSizeLimit,
-  captureConfluenceTab,
-  isEditorSelectionCurrent,
-  readEditorSelection,
-} from '../confluence/tab'
 import { selectionsCarried } from '@cofun/tools'
 import { clipSelection } from '@cofun/tools/tab'
 import { linkTo, watchSelections, type Selection } from '@cofun/tools/selection'
@@ -45,54 +37,7 @@ export function useComposer({
   // order sent: each adds to the ones before. They stay as the user switches tabs or chats, until a
   // question carries them or the user takes them off.
   const [selections, setSelections] = useState<Selection[]>([])
-  const [editor, setEditor] = useState<Awaited<ReturnType<typeof readEditorSelection>>>()
-  const [file, setFile] = useState<File>()
-  const [confluenceStatus, setConfluenceStatus] = useState('')
-  const captureEpoch = useRef(0)
   const submitting = useRef(false)
-
-  // The Confluence site the current tab shows, once Confluco may use it: checked again as the user
-  // switches or loads tabs, and after each question, which may have allowed the site.
-  const site = useConfluenceSite(busy)
-  const siteKey = site && site.origin + site.path
-  // What was staged belongs to its site: cleared when another Confluence site comes up, kept while
-  // the user looks at a tab that is not Confluence. Send checks the editor selection again.
-  const stagedFor = useRef<string>(undefined)
-  useEffect(() => {
-    if (!siteKey) return
-    if (stagedFor.current !== undefined && stagedFor.current !== siteKey) {
-      captureEpoch.current++
-      setEditor(undefined)
-      setFile(undefined)
-    }
-    stagedFor.current = siteKey
-  }, [siteKey])
-
-  async function attachEditorSelection() {
-    const capture = ++captureEpoch.current
-    setEditor(undefined)
-    setConfluenceStatus('Reading editor selection…')
-    try {
-      const captured = await readEditorSelection(await captureConfluenceTab())
-      if (captureEpoch.current !== capture) return
-      setEditor(captured)
-      setConfluenceStatus('')
-      inputRef.current?.focus()
-    } catch (error) {
-      if (captureEpoch.current === capture)
-        setConfluenceStatus(error instanceof Error ? error.message : 'Could not read the editor selection.')
-    }
-  }
-
-  function chooseFile(next: File | undefined) {
-    if (next && next.size > attachmentSizeLimit) {
-      setFile(undefined)
-      setConfluenceStatus('Choose an attachment of at most 10 MiB.')
-      return
-    }
-    setFile(next)
-    setConfluenceStatus('')
-  }
 
   useEffect(() => {
     let stop: (() => void) | undefined
@@ -128,10 +73,6 @@ export function useComposer({
   const [composingFor, setComposingFor] = useState(chat)
   if (composingFor !== chat) {
     setComposingFor(chat)
-    captureEpoch.current++
-    setEditor(undefined)
-    setFile(undefined)
-    setConfluenceStatus('')
     resetPicker()
   }
 
@@ -217,58 +158,22 @@ export function useComposer({
     return () => document.removeEventListener('pointerdown', onPointerDown)
   }, [!!picker])
 
-  async function send(attachment?: AttachmentUpload) {
-    const text = attachment
-      ? `I selected a local file and clicked ${attachment.mode === 'create' ? 'Upload' : 'Replace'} attachment. Use upload_page_attachment to preview it.`
-      : input.trim()
+  function send() {
+    const text = input.trim()
     if (!text || busy || submitting.current) return
     submitting.current = true
-    const attached = attachment ? [] : [...selections]
-    const capture = captureEpoch.current
-    let status = ''
     try {
-      if (editor && !attachment) {
-        const tab = await captureConfluenceTab().catch(() => undefined)
-        const same =
-          tab?.tabId === editor.tab.tabId &&
-          tab.url === editor.tab.url &&
-          tab.instance.origin === editor.tab.instance.origin &&
-          tab.instance.path === editor.tab.instance.path
-        if (same && (await isEditorSelectionCurrent(tab, editor.documentId)) && capture === captureEpoch.current) {
-          attached.push({
-            text: editor.text,
-            chars: editor.chars,
-            title: 'Confluence editor selection',
-            url: tab.instance.origin + tab.instance.path,
-          })
-        } else status = 'The editor changed, so the selected text was omitted.'
-      }
       if (panel.getSnapshot().chat !== chat || chat.getSnapshot().status !== 'ready') return
-      if (!attachment && capture === captureEpoch.current) {
-        captureEpoch.current++
-        setEditor(undefined)
-      }
-      setConfluenceStatus(status)
       const sentPages = chips.map((c) => c.page)
-      const sentSelections = selectionsCarried(attached).map(({ selection }) => shownSelection(selection))
+      const sentSelections = selectionsCarried(selections).map(({ selection }) => shownSelection(selection))
       const earlier = chat.getSnapshot().messages.flatMap((m) => (m.role === 'user' ? (m.pages ?? []) : []))
-      const context = carryPages(chat.memory, chosen, attached, earlier)
-      if (attachment) setFile(undefined)
-      else {
-        setSelections((current) => current.filter((selection) => !selections.includes(selection)))
-        setInput((current) => (current === input ? '' : current))
-        setChosen((current) => current.filter((page) => !chosen.includes(page)))
-        dismissed.current = undefined
-        setPicker(undefined)
-      }
-      panel.ask({
-        text,
-        pages: sentPages,
-        selections: sentSelections,
-        context,
-        mode: panel.getSnapshot().mode,
-        attachment,
-      })
+      const context = carryPages(chat.memory, chosen, selections, earlier)
+      setSelections((current) => current.filter((selection) => !selections.includes(selection)))
+      setInput((current) => (current === input ? '' : current))
+      setChosen((current) => current.filter((page) => !chosen.includes(page)))
+      dismissed.current = undefined
+      setPicker(undefined)
+      panel.ask({ text, pages: sentPages, selections: sentSelections, context, mode: panel.getSnapshot().mode })
     } finally {
       submitting.current = false
     }
@@ -285,7 +190,7 @@ export function useComposer({
     if (busy) {
       track({ event: 'reply_stopped' })
       chat.stop()
-    } else void send()
+    } else send()
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -299,7 +204,7 @@ export function useComposer({
     }
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
-      void send()
+      send()
     }
   }
 
@@ -311,21 +216,6 @@ export function useComposer({
     pickerFrom: picker?.from,
     chips,
     selections,
-    onConfluence: site !== undefined,
-    editorSelectionAvailable: site !== undefined && !site.cloud,
-    editor,
-    file,
-    confluenceStatus,
-    attachEditorSelection,
-    removeEditorSelection: () => {
-      captureEpoch.current++
-      setEditor(undefined)
-      setConfluenceStatus('')
-    },
-    chooseFile,
-    sendAttachment: (mode: AttachmentUpload['mode']) => {
-      if (file) void send({ file, mode })
-    },
     onInput: (text: string, at: number | null) => {
       setInput(text)
       followAt(text, at)
@@ -372,20 +262,6 @@ export function Composer({
     // One box: the question on top, and below it, inside the box, which model answers and the send button.
     <form id="composer" onSubmit={composer.onSubmit} inert={covered}>
       {picker.element}
-      {composer.editor && (
-        <section className="confluence-selection" aria-label="Confluence editor selection">
-          <pre>{composer.editor.text}</pre>
-          {composer.editor.chars > composer.editor.text.length && <small>Selection limited to 4,000 characters.</small>}
-          <button type="button" onClick={composer.removeEditorSelection}>
-            Remove editor selection
-          </button>
-        </section>
-      )}
-      {composer.confluenceStatus && (
-        <p className="confluence-composer-status" role="status">
-          {composer.confluenceStatus}
-        </p>
-      )}
       <ComposerPages
         chips={chips}
         onRemove={composer.removeChip}
@@ -410,47 +286,6 @@ export function Composer({
       />
       <div className="composer-tools">
         <AddMenu onAddPage={composer.openPicker} />
-        {composer.onConfluence && (composer.editorSelectionAvailable || mode !== 'read_only') && (
-          <details className="confluence-actions">
-            <summary>Confluence</summary>
-            <div className="confluence-actions-list">
-              {composer.editorSelectionAvailable && (
-                <button type="button" disabled={busy} onClick={() => void composer.attachEditorSelection()}>
-                  Attach editor selection
-                </button>
-              )}
-              {mode !== 'read_only' && (
-                <>
-                  <label>
-                    Attachment file
-                    <input
-                      type="file"
-                      disabled={busy}
-                      onChange={(event) => {
-                        composer.chooseFile(event.currentTarget.files?.[0])
-                        event.currentTarget.value = ''
-                      }}
-                    />
-                  </label>
-                  {composer.file && (
-                    <>
-                      <p>{composer.file.name}</p>
-                      <button type="button" disabled={busy} onClick={() => composer.sendAttachment('create')}>
-                        Upload attachment
-                      </button>
-                      <button type="button" disabled={busy} onClick={() => composer.sendAttachment('replace')}>
-                        Replace attachment
-                      </button>
-                      <button type="button" onClick={() => composer.chooseFile(undefined)}>
-                        Remove file
-                      </button>
-                    </>
-                  )}
-                </>
-              )}
-            </div>
-          </details>
-        )}
         <ModeButton mode={mode ?? 'edit'} onChange={(next) => panel.changeMode(next)} />
         <span className="grow" />
         {/* The model chip leads the right side, next to send; the left is for what goes with the question. */}
@@ -506,36 +341,4 @@ function shownSelection(selection: Selection): QuestionSelection {
     url: linkTo(selection) ?? selection.url,
     quote: text.length > QUOTE_CHARS ? `${clipSelection(text, QUOTE_CHARS)}…` : text,
   }
-}
-
-/** Follows which Confluence site the current tab shows, once Confluco may use it; undefined on any other tab. */
-function useConfluenceSite(busy: boolean): Instance | undefined {
-  const [site, setSite] = useState<Instance>()
-  useEffect(() => {
-    if (busy) return
-    let reads = 0
-    const read = () => {
-      const n = ++reads
-      void captureConfluenceTab()
-        .catch(() => undefined)
-        .then((tab) => {
-          if (n === reads) setSite(tab?.instance)
-        })
-    }
-    const onUpdated = (_id: number, change: chrome.tabs.OnUpdatedInfo, tab: chrome.tabs.Tab) => {
-      // Again once the page has loaded: a self-managed page names its site in markup.
-      if (tab.active && (change.url !== undefined || change.status === 'complete')) read()
-    }
-    read()
-    chrome.tabs.onActivated.addListener(read)
-    chrome.tabs.onUpdated.addListener(onUpdated)
-    chrome.tabs.onReplaced.addListener(read)
-    return () => {
-      reads++
-      chrome.tabs.onActivated.removeListener(read)
-      chrome.tabs.onUpdated.removeListener(onUpdated)
-      chrome.tabs.onReplaced.removeListener(read)
-    }
-  }, [busy])
-  return site
 }

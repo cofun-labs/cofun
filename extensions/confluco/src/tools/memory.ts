@@ -1,7 +1,6 @@
 import type { QuestionPage } from '@cofun/agent'
 import type { SearchContinuation } from '../confluence/api'
 import type { CloudDiscussionPosition } from '../confluence/cloud-inspection'
-import type { AttachmentUpload } from '../confluence/attachments'
 import type { CapturedTab, ConfluenceTab } from '../confluence/tab'
 
 /** A write resolves its target from the browser state at submission, never from later tab switches. */
@@ -10,9 +9,6 @@ export interface ConfluenceQuestion {
   captured: Promise<CapturedTab | undefined>
   /** That tab as a Confluence site, once Confluco may use the site (see target in target.ts). */
   tab: Promise<ConfluenceTab | undefined>
-  attachment?: AttachmentUpload
-  writtenTool?: string
-  nextLabel: number
 }
 
 export type ConfluenceContinuation = SearchContinuation | { comments: CloudDiscussionPosition }

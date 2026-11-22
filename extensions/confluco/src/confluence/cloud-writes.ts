@@ -3,8 +3,7 @@ import { z } from '../zod'
 import { cloudCollection, cloudPage, cloudPageLink, fetchCloudPage } from './cloud'
 import { commentStorage, matchesCommentText, type CommentRequest } from './comments'
 import { confluenceLabel, type LabelRequest } from './labels'
-import { spaceKey } from './navigation'
-import { plainTextStorage, requestedReference, unverifiedWrite, type PageWriteRequest } from './page-writes'
+import { plainTextStorage, unverifiedWrite, type PageWriteRequest } from './page-writes'
 import { readableText } from './readable-text'
 import { pageReference, type PageReference } from './references'
 import {
@@ -27,7 +26,6 @@ export const cloudRevision = cloudLocatedPage.extend({
   version: z.object({ number: z.int().min(1).max(2_147_483_647) }),
   body: z.object({ storage: z.object({ value: z.string() }) }),
 })
-const cloudSpace = z.object({ id, key: spaceKey })
 const addedLabels = z.object({ results: z.array(confluenceLabel) })
 const commentIdentity = z.object({ id, status: z.literal('current') })
 const footerComment = commentIdentity.extend({
@@ -66,8 +64,8 @@ export async function findCloudTitle(tab: ConfluenceTab, title: string, spaceId:
 }
 
 export async function prepareCloudPageWrite(request: PageWriteRequest, tab: ConfluenceTab, signal?: AbortSignal) {
-  const ref = requestedReference(tab, request.targetUrl)
   if (request.action === 'rename') {
+    const ref = request.page
     const original = await readCloudRevision(tab, ref, signal)
     const page = cloudPageLink(tab, original)
     const next = original.version.number + 1
@@ -111,14 +109,8 @@ export async function prepareCloudPageWrite(request: PageWriteRequest, tab: Conf
     }
   }
 
-  if (request.text.length > 40_000) refuse('Shorten the requested page body to 40,000 characters or fewer.')
+  const ref = request.parent
   const parent = await readCloudLocation(tab, ref, signal)
-  if (request.spaceKey) {
-    const found = await getConfluence(tab, 'spaces/' + parent.spaceId, {}, signal, 'cloud-v2')
-    const space = cloudSpace.safeParse(found.data)
-    if (!space.success || space.data.id !== parent.spaceId || space.data.key !== request.spaceKey)
-      refuse('The chosen parent is not in the requested Confluence space.')
-  }
   const target = cloudPageLink(tab, parent)
   const preview = `Create "${request.title}" under "${target.title}" (${target.url}).`
   return {
@@ -180,12 +172,12 @@ async function cloudHasLabel(tab: ConfluenceTab, page: string, name: string, sig
 }
 
 export async function applyCloudLabel(request: LabelRequest, tab: ConfluenceTab, signal?: AbortSignal) {
-  const page = await readCloudLocation(tab, undefined, signal)
+  const page = await readCloudLocation(tab, request.page, signal)
   const name = request.label.toLowerCase()
   const present = request.action === 'add'
   const result = { page: cloudPageLink(tab, page), label: name, present }
   if ((await cloudHasLabel(tab, page.id, name, signal)) === present) return { ...result, changed: false }
-  const current = await readCloudLocation(tab, undefined, signal)
+  const current = await readCloudLocation(tab, request.page, signal)
   if (current.id !== page.id)
     refuse('The page changed before the label could be updated. Ask again on the intended page.')
   const receipt = await writeConfluenceLabel(
@@ -229,9 +221,7 @@ function unverifiedComment(cause?: unknown): never {
 }
 
 export async function prepareCloudComment(request: CommentRequest, tab: ConfluenceTab, signal?: AbortSignal) {
-  if (!request.text.trim() || request.text.length > 4000)
-    refuse('Write a non-empty comment of at most 4,000 characters.')
-  const ref = requestedReference(tab, request.targetUrl)
+  const ref = request.page
   const page = await readCloudLocation(tab, ref, signal)
   const link = cloudPageLink(tab, page)
   const parent = request.parentId ? await readCloudComment(tab, request.parentId, page.id, signal) : undefined

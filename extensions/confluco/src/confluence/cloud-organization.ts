@@ -11,8 +11,8 @@ import {
 } from './cloud-writes'
 import { requireRetainedAccess } from './history'
 import { requireCopyableStorage, type OrganizationRequest } from './page-organization'
-import { requestedReference, unverifiedWrite } from './page-writes'
-import { pageReference } from './references'
+import { unverifiedWrite } from './page-writes'
+import { pageReference, type PageReference } from './references'
 import {
   createCloudChildPage,
   moveCloudPage,
@@ -62,7 +62,7 @@ async function requireBodyOnlyCopy(tab: ConfluenceTab, page: Revision, signal?: 
     signal,
   })
   if (attachments.items.length || attachments.cursor || attachments.paginationNotice)
-    refuse('The page has attachments or could not be checked. Review it in Confluence before copying.')
+    throw new Error('This page has attachments, or they could not be checked. The user can copy it in Confluence.')
 }
 
 async function checkOrganization(
@@ -72,22 +72,21 @@ async function checkOrganization(
   destination: Location,
   signal?: AbortSignal,
 ) {
-  if (source.spaceId !== destination.spaceId) refuse('Choose a destination in the same Confluence space.')
+  if (source.spaceId !== destination.spaceId) throw new Error('Choose a parent in the same Confluence space.')
   if (action === 'move' && !source.parentId)
-    refuse('Move a page with an existing parent. Use Confluence for top-level pages.')
+    throw new Error('Confluco does not move top-level pages. The user can move it in Confluence.')
   const from = await lineage(tab, source, signal)
   const to = await lineage(tab, destination, signal)
-  if (action === 'move' && to.includes(source.id)) refuse('A page cannot be moved under itself or its descendants.')
+  if (action === 'move' && to.includes(source.id))
+    throw new Error('A page cannot be moved under itself or its descendants.')
   if (action === 'copy') await requireBodyOnlyCopy(tab, source, signal)
   await requireRetainedAccess(tab, { id: source.id, ancestors: from.slice(0, -1) }, to, action, signal)
   return { from: from.join('/'), to: to.join('/') }
 }
 
 export async function prepareCloudOrganization(request: OrganizationRequest, tab: ConfluenceTab, signal?: AbortSignal) {
-  const ref = requestedReference(tab, request.sourceUrl)
-  const parentRef = requestedReference(tab, request.destinationUrl)
-  const source = await readCloudRevision(tab, ref, signal)
-  const parent = await readCloudLocation(tab, parentRef, signal)
+  const source = await readCloudRevision(tab, request.page, signal)
+  const parent = await readCloudLocation(tab, request.parent, signal)
   const original = await checkOrganization(tab, request.action, source, parent, signal)
   const from = cloudPageLink(tab, source)
   const to = cloudPageLink(tab, parent)
@@ -107,7 +106,7 @@ export async function prepareCloudOrganization(request: OrganizationRequest, tab
 
       if (request.action === 'copy') {
         if (await findCloudTitle(tab, request.title, destination.spaceId, signal))
-          refuse('A page with that title already exists in the destination space. Choose a different title.')
+          throw new Error('A page with that title already exists in the space. Choose a different title.')
         const receipt = await createCloudChildPage(
           tab,
           {
@@ -152,20 +151,22 @@ export async function prepareCloudOrganization(request: OrganizationRequest, tab
 }
 
 async function requireEligibleTrash(tab: ConfluenceTab, page: Revision, signal?: AbortSignal) {
-  if (!page.parentId) refuse('Use Confluence to manage top-level pages in the trash.')
+  if (!page.parentId) throw new Error('Confluco does not trash top-level pages. The user can do it in Confluence.')
   const ancestors = await lineage(tab, page, signal)
   const children = await cloudCollection(tab, `pages/${page.id}/direct-children`, {}, undefined, z.unknown(), {
     limit: 1,
     signal,
   })
   if (children.items.length || children.cursor || children.paginationNotice)
-    refuse('Confluco could not confirm that this page has no children. Review its hierarchy before trashing it.')
+    throw new Error(
+      'This page has child items, or they could not be checked, which Confluence would move to the space root. The user can trash it in Confluence.',
+    )
   await requireRetainedAccess(tab, { id: page.id, ancestors: ancestors.slice(0, -1) }, [], 'trash', signal)
   return ancestors.join('/')
 }
 
-export async function prepareCloudTrash(tab: ConfluenceTab, targetUrl: string | undefined, signal?: AbortSignal) {
-  const page = await readCloudRevision(tab, requestedReference(tab, targetUrl), signal)
+export async function prepareCloudTrash(tab: ConfluenceTab, ref: PageReference | undefined, signal?: AbortSignal) {
+  const page = await readCloudRevision(tab, ref, signal)
   const hierarchy = await requireEligibleTrash(tab, page, signal)
   const link = cloudPageLink(tab, page)
   return {

@@ -11,3 +11,7 @@ No test account is needed: sign-up is open and new accounts get free credits.
 
 Pages change only when asked in an exact form, e.g. Replace "a" with "b" on this page.
 ```
+
+## For the next version
+
+"Pages change only when asked in an exact form, e.g. Replace "a" with "b" on this page." becomes "In Edit mode, ask for a change in your own words, e.g. "Rename this page to Draft notes". Moving a page to the trash asks first."

@@ -28,10 +28,10 @@ const moved = { ...source, ancestors: [...parent.ancestors, { id: parent.id }], 
 const copied = { ...moved, id: '99', title: 'Copy fixture', version: { number: 1 } }
 const empty = { results: [] }
 const unrestricted = { restrictions: { user: empty, group: empty } }
-const move = { name: 'move_page', arguments: '{}' }
-const copy = { name: 'copy_page', arguments: '{}' }
-const moveCommand = 'Move this page under ' + url('77')
-const copyCommand = 'Copy this page under ' + url('77') + ' as "Copy fixture"'
+const move = { name: 'move_page', arguments: JSON.stringify({ parent: url('77') }) }
+const copy = { name: 'copy_page', arguments: JSON.stringify({ parent: url('77'), title: 'Copy fixture' }) }
+const moveQuestion = 'File this page under the destination page'
+const copyQuestion = 'Make a copy of this page under the destination page'
 
 async function openPanel() {
   const { browser, user } = await openWorkspace({ url: url(source.id), title: source.title })
@@ -77,7 +77,7 @@ describe('organize published pages', () => {
       return Response.json(done ? moved : source)
     }
     browser.ai.script.push({ toolCalls: [move] }, { reply: 'Move verified.' })
-    await ask(user, moveCommand)
+    await ask(user, moveQuestion)
     expect(await screen.findByText('Move verified.')).toBeVisible()
     expect(writes(browser)).toHaveLength(1)
     expect(results(browser)).toContain(url('42'))
@@ -109,7 +109,7 @@ describe('organize published pages', () => {
       return Response.json(source)
     }
     browser.ai.script.push({ toolCalls: [copy] }, { reply: 'Copy verified.' })
-    await ask(user, copyCommand)
+    await ask(user, copyQuestion)
     expect(await screen.findByText('Copy verified.')).toBeVisible()
     expect(writes(browser)).toHaveLength(1)
     expect(results(browser)).toContain(url('99'))
@@ -117,20 +117,16 @@ describe('organize published pages', () => {
   })
 
   it.each([
-    ['Summarize this page', move, parent, false, /specify the source page/],
-    ['Move this page before ' + url('77'), move, parent, false, /Move this page under URL/],
-    [moveCommand, move, { ...parent, space: { key: 'OTHER' } }, false, /same Confluence space/],
-    [moveCommand, move, { ...parent, ancestors: [{ id: '42' }] }, false, /under itself or its descendants/],
-    [moveCommand, move, { ...parent, ancestors: [{ id: '30' }] }, true, /drop an existing page restriction/],
-    [copyCommand, copy, parent, false, /page has attachments/],
+    ['a parent in another space', { ...parent, space: { key: 'OTHER' } }, false, /same Confluence space/],
+    ['a parent under the page', { ...parent, ancestors: [{ id: '42' }] }, false, /under itself or its descendants/],
+    ['a lost restriction', { ...parent, ancestors: [{ id: '30' }] }, true, /drop an existing page restriction/],
   ])(
-    '[UC-CONFLUCO-CONFLUENCE-011-S03] rejects unsupported or unapproved organization (%s)',
-    async (message, call, destination, hasRestriction, reason) => {
+    '[UC-CONFLUCO-CONFLUENCE-011-S03] refuses a move to %s and tells the model why',
+    async (_case, destination, hasRestriction, reason) => {
       const { browser, user } = await openPanel()
       browser.confluenceResponse = (address) => {
         const path = new URL(address).pathname
         if (path.endsWith('/77')) return Response.json(destination)
-        if (path.endsWith('/child/attachment')) return Response.json({ results: [{ id: 'att1' }] })
         if (path.endsWith('/restriction/byOperation') && hasRestriction)
           return Response.json({
             read: { restrictions: { user: { results: [{}] }, group: empty } },
@@ -138,10 +134,10 @@ describe('organize published pages', () => {
           })
         return Response.json(source)
       }
-      browser.ai.script.push({ toolCalls: [call] })
-      await ask(user, message)
-      await answered()
-      expect(screen.getAllByText(reason).length).toBeGreaterThan(0)
+      browser.ai.script.push({ toolCalls: [move] }, { reply: 'The page stays where it is.' })
+      await ask(user, moveQuestion)
+      expect(await screen.findByText('The page stays where it is.')).toBeVisible()
+      expect(results(browser)).toMatch(reason)
       expect(writes(browser)).toEqual([])
     },
   )
@@ -160,7 +156,7 @@ describe('organize published pages', () => {
         return Response.json(source)
       }
       browser.ai.script.push({ toolCalls: [move, move] })
-      await ask(user, moveCommand)
+      await ask(user, moveQuestion)
       await answered()
       expect(
         screen.getAllByText(uncertain ? /change may have been applied/ : /destination changed after the preview/)
@@ -170,47 +166,48 @@ describe('organize published pages', () => {
     },
   )
 
+  const restricted = { restrictions: { user: { results: [{}] }, group: empty } }
   it.each([
-    ['read restriction', source.body.storage.value, 'read', /drop an existing page restriction/],
-    ['update restriction', source.body.storage.value, 'update', /drop an existing page restriction/],
+    ['a source read restriction', { read: restricted }, {}, false, /drop an existing page restriction/],
+    ['a source update restriction', { update: restricted }, {}, false, /drop an existing page restriction/],
     [
-      'attachment reference',
-      '<p><ri:attachment ri:filename="file.pdf" /></p>',
-      '',
+      'an attachment reference',
+      {},
+      { value: '<p><ri:attachment ri:filename="file.pdf" /></p>' },
+      false,
       /attachment or inline comment references/,
     ],
     [
-      'inline comment reference',
-      '<ac:inline-comment-marker ac:ref="test">Text</ac:inline-comment-marker>',
-      '',
+      'an inline comment reference',
+      {},
+      { value: '<ac:inline-comment-marker ac:ref="test">Text</ac:inline-comment-marker>' },
+      false,
       /attachment or inline comment references/,
     ],
+    ['attachments', {}, {}, true, /page has attachments/],
+    ['a title already used', {}, {}, false, /title already exists/],
   ])(
-    '[UC-CONFLUCO-CONFLUENCE-011-S03] refuses a body copy with a source %s',
-    async (_case, body, operation, reason) => {
+    '[UC-CONFLUCO-CONFLUENCE-011-S03] refuses a copy of a page with %s and tells the model why',
+    async (outcome, access, storage, hasAttachments, reason) => {
       const { browser, user } = await openPanel()
       browser.confluenceResponse = (address) => {
         const path = new URL(address).pathname
         if (path.endsWith('/77')) return Response.json(parent)
-        if (path.endsWith('/child/attachment')) return Response.json(empty)
-        if (path.endsWith('/42/restriction/byOperation')) {
-          const restricted = { restrictions: { user: { results: [{}] }, group: empty } }
-          return Response.json({
-            read: operation === 'read' ? restricted : unrestricted,
-            update: operation === 'update' ? restricted : unrestricted,
-          })
-        }
-        return Response.json({ ...source, body: { storage: { ...source.body.storage, value: body } } })
+        if (path.endsWith('/child/attachment')) return Response.json(hasAttachments ? { results: [{}] } : empty)
+        if (path.endsWith('/42/restriction/byOperation'))
+          return Response.json({ read: unrestricted, update: unrestricted, ...access })
+        if (path === api) return Response.json(outcome === 'a title already used' ? { results: [copied] } : empty)
+        return Response.json({ ...source, body: { storage: { ...source.body.storage, ...storage } } })
       }
-      browser.ai.script.push({ toolCalls: [copy] })
-      await ask(user, copyCommand)
-      await answered()
-      expect(screen.getAllByText(reason).length).toBeGreaterThan(0)
+      browser.ai.script.push({ toolCalls: [copy] }, { reply: 'No copy was made.' })
+      await ask(user, copyQuestion)
+      expect(await screen.findByText('No copy was made.')).toBeVisible()
+      expect(results(browser)).toMatch(reason)
       expect(writes(browser)).toEqual([])
     },
   )
 
-  it.each(['source changed', 'invalid create response', 'copy read-back mismatch', 'title conflict'])(
+  it.each(['source changed', 'invalid create response', 'copy read-back mismatch'])(
     '[UC-CONFLUCO-CONFLUENCE-011-S04] stops a copy on %s',
     async (outcome) => {
       const { browser, user } = await openPanel()
@@ -223,7 +220,7 @@ describe('organize published pages', () => {
         if (path.endsWith('/child/attachment')) return Response.json(empty)
         if (init?.method === 'POST')
           return Response.json(outcome === 'invalid create response' ? { title: copied.title } : copied)
-        if (path === api) return Response.json(outcome === 'title conflict' ? { results: [copied] } : empty)
+        if (path === api) return Response.json(empty)
         if (path.endsWith('/99')) return Response.json({ ...copied, ancestors: [] })
         sourceReads++
         return Response.json(
@@ -231,16 +228,11 @@ describe('organize published pages', () => {
         )
       }
       browser.ai.script.push({ toolCalls: [copy, copy] })
-      await ask(user, copyCommand)
+      await ask(user, copyQuestion)
       await answered()
-      const reason =
-        outcome === 'source changed'
-          ? /changed after the preview/
-          : outcome === 'title conflict'
-            ? /title already exists/
-            : /could not be verified/
+      const reason = outcome === 'source changed' ? /changed after the preview/ : /could not be verified/
       expect(screen.getAllByText(reason).length).toBeGreaterThan(0)
-      expect(writes(browser)).toHaveLength(outcome === 'source changed' || outcome === 'title conflict' ? 0 : 1)
+      expect(writes(browser)).toHaveLength(outcome === 'source changed' ? 0 : 1)
     },
   )
 })

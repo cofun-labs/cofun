@@ -1,24 +1,28 @@
-import { prepareCloudPageEdit } from '../confluence/cloud-edits'
-import { prepareCloudRestore } from '../confluence/cloud-status'
+// The tools that change Confluence. The model chooses what to write and where, as in Notico: each
+// argument is parsed with its schema, and the page a call names is a reference a Confluence tool
+// returned in this question or a link to a page on the captured site. Only moving a page to the trash
+// asks the user first; Read only turns every write off before its preview.
 import type { ToolContext } from '@cofun/agent'
-import { applyAttachmentUpload, prepareAttachmentUpload } from '../confluence/attachments'
+import { prepareCloudPageEdit } from '../confluence/cloud-edits'
 import { prepareCloudOrganization, prepareCloudTrash } from '../confluence/cloud-organization'
 import { applyCloudLabel, prepareCloudComment, prepareCloudPageWrite } from '../confluence/cloud-writes'
-import { applyComment, prepareComment, requestedComment } from '../confluence/comments'
-import { applyLabel, changeLabelArgs, requestedLabelChanges } from '../confluence/labels'
-import { applyOrganization, prepareOrganization, requestedOrganization } from '../confluence/page-organization'
-import { applyPageStatus, preparePageStatus, requestedPageStatus } from '../confluence/page-status'
+import { applyComment, prepareComment } from '../confluence/comments'
+import { applyLabel, labelName } from '../confluence/labels'
+import { applyOrganization, prepareOrganization, type OrganizationRequest } from '../confluence/page-organization'
+import { applyPageTrash, preparePageTrash } from '../confluence/page-status'
 import {
   applyPageEdit,
   applyPageWrite,
   describePageWrite,
-  pageTitleArgs,
+  linkedPage,
   preparePageEdit,
   preparePageWrite,
-  requestedPageEdit,
-  requestedPageWrite,
+  title,
+  type PageWriteRequest,
 } from '../confluence/page-writes'
+import { pageReference, type PageReference } from '../confluence/references'
 import { captureConfluenceTab, refuse, type ConfluenceTab } from '../confluence/tab'
+import { requirePage } from './confluence'
 import { target } from './target'
 import { defineTool } from '../tool'
 import { z } from '../zod'
@@ -37,9 +41,35 @@ interface Plan {
   apply(signal?: AbortSignal): Promise<ChangeResult>
 }
 
-const noArgs = z.strictObject({})
+/** A page a write names: a reference from a Confluence tool, or a link to a page on this site. */
+const pageTarget = z.union([
+  pageReference,
+  z.string().min(1).max(2048).describe('A link to a published page on the Confluence site in the current tab.'),
+])
+type PageTarget = z.output<typeof pageTarget>
+const page = pageTarget
+  .optional()
+  .describe(
+    'The page: a page reference returned by a Confluence tool in this question, or a link to a page on this Confluence site. Omit for the page open in the current tab.',
+  )
 
-async function requireSameTab(context: ToolContext<ToolMemory>, captured: ConfluenceTab): Promise<void> {
+/** The page a call names, on the captured site. */
+function pageAt(memory: ToolMemory, tab: ConfluenceTab, at: PageTarget): PageReference {
+  if (typeof at !== 'string') {
+    requirePage(memory, at)
+    return at
+  }
+  const linked = linkedPage(tab, at)
+  if (!linked) throw new Error('Use a link to a published page on the Confluence site in the current tab.')
+  return linked
+}
+
+/** The page a call names, or `undefined` for the page open in the tab. */
+function resolvePage(memory: ToolMemory, tab: ConfluenceTab, at: PageTarget | undefined): PageReference | undefined {
+  return at === undefined ? undefined : pageAt(memory, tab, at)
+}
+
+async function requireSameTab(captured: ConfluenceTab): Promise<void> {
   const now = await captureConfluenceTab()
   if (
     now?.tabId !== captured.tabId ||
@@ -50,7 +80,10 @@ async function requireSameTab(context: ToolContext<ToolMemory>, captured: Conflu
     refuse('The Confluence tab changed. Open the intended page and ask again.')
 }
 
-/** Each prepared change belongs to the active question and its recorded tab. */
+/**
+ * A write, as a preview the user sees and the run that applies it: both are bound to the question
+ * and the tab it was asked on. The preview reads what the write needs; the run checks it again first.
+ */
 function change<S extends z.ZodObject>(
   name: string,
   title: string,
@@ -59,7 +92,6 @@ function change<S extends z.ZodObject>(
   prepare: (
     input: z.output<S>,
     context: ToolContext<ToolMemory>,
-    question: ConfluenceQuestion,
     tab: ConfluenceTab,
     signal?: AbortSignal,
   ) => Promise<Plan>,
@@ -81,10 +113,6 @@ function change<S extends z.ZodObject>(
       const question = memory.confluenceQuestion
       if (!question) refuse('Ask for a Confluence change from the side panel.')
       plans.delete(question)
-      if (question.writtenTool && (question.writtenTool !== name || name !== 'change_page_label')) {
-        plans.set(question, { error: new Error('The Confluence change in this question was already handled.') })
-        return undefined
-      }
       let tab: ConfluenceTab
       try {
         tab = await target(context)
@@ -94,13 +122,12 @@ function change<S extends z.ZodObject>(
         plans.set(question, { error })
         return undefined
       }
-      await requireSameTab(context, tab)
+      await requireSameTab(tab)
       signal?.throwIfAborted()
       try {
-        const plan = await prepare(input, context, question, tab, signal)
+        const plan = await prepare(input, context, tab, signal)
         signal?.throwIfAborted()
         if (memory.confluenceQuestion !== question) return undefined
-        question.writtenTool = name
         plans.set(question, { tab, plan })
         return plan.preview
       } catch (error) {
@@ -109,8 +136,7 @@ function change<S extends z.ZodObject>(
         return undefined
       }
     },
-    run: async (_args, signal, context) => {
-      const { memory } = context
+    run: async (_args, signal, { memory }) => {
       const question = memory.confluenceQuestion
       const prepared = question && plans.get(question)
       if (!question || !prepared) refuse('Ask again to review the intended Confluence change.')
@@ -118,7 +144,7 @@ function change<S extends z.ZodObject>(
       if ('error' in prepared) throw prepared.error
       const { plan, tab } = prepared
       signal?.throwIfAborted()
-      await requireSameTab(context, tab)
+      await requireSameTab(tab)
       signal?.throwIfAborted()
       const result = await plan.apply(signal)
       return { text: asData([JSON.stringify(result.data)]), details: {}, changed: result.changed }
@@ -126,53 +152,72 @@ function change<S extends z.ZodObject>(
   })
 }
 
-function pageWrite(action: 'create' | 'rename') {
-  return change(
-    action === 'create' ? 'create_page' : 'rename_page',
-    'a Confluence page',
-    action === 'create'
-      ? 'Create a published child page for a direct user request, with the exact quoted title.'
-      : 'Rename a published page for a direct user request, with the exact quoted title.',
-    pageTitleArgs,
-    async ({ title }, { userText }, _question, tab, signal) => {
-      const request = requestedPageWrite(userText)
-      if (request?.action !== action || request.title !== title)
-        throw new Error(
-          'Only the user can request this page change. ' +
-            (action === 'create'
-              ? 'Ask them to say Create page "TITLE" under this page.'
-              : 'Ask them to say Rename this page to "TITLE".'),
-        )
-      if (tab.instance.cloud) {
-        const plan = await prepareCloudPageWrite(request, tab, signal)
-        return {
-          preview: plan.preview,
-          async apply(signal) {
-            const data = await plan.apply(signal)
-            return { data, changed: data.changed }
-          },
-        }
-      }
-      const plan = await preparePageWrite(request, tab, signal)
-      return {
-        preview: describePageWrite(plan),
-        async apply(signal) {
-          const data = await applyPageWrite(plan, signal)
-          return { data, changed: data.changed }
-        },
-      }
+async function planPageWrite(tab: ConfluenceTab, write: PageWriteRequest, signal?: AbortSignal): Promise<Plan> {
+  if (tab.instance.cloud) {
+    const plan = await prepareCloudPageWrite(write, tab, signal)
+    return {
+      preview: plan.preview,
+      async apply(signal) {
+        const data = await plan.apply(signal)
+        return { data, changed: data.changed }
+      },
+    }
+  }
+  const plan = await preparePageWrite(write, tab, signal)
+  return {
+    preview: describePageWrite(plan),
+    async apply(signal) {
+      const data = await applyPageWrite(plan, signal)
+      return { data, changed: data.changed }
     },
-  )
+  }
 }
 
+const createPage = change(
+  'create_page',
+  'a Confluence page',
+  'Create a published child page under a page on the Confluence site in the current tab, with a title and plain-text ' +
+    'body. Blank lines separate paragraphs. A page with the same title in the space is left as it is.',
+  z.strictObject({
+    title: title.describe('The title of the new page, unique in its space.'),
+    text: z.string().max(40_000).optional().describe('The body, as plain text. Omit for an empty page.'),
+    parent: page.describe(
+      'The parent page: a page reference returned by a Confluence tool in this question, or a link to a page on this Confluence site. Omit for the page open in the current tab.',
+    ),
+  }),
+  ({ title, text, parent }, { memory }, tab, signal) =>
+    planPageWrite(tab, { action: 'create', title, text: text ?? '', parent: resolvePage(memory, tab, parent) }, signal),
+)
+
+const renamePage = change(
+  'rename_page',
+  'a Confluence page',
+  'Change the title of a published page. Its body and place stay as they are.',
+  z.strictObject({ title: title.describe('The new title, unique in the space.'), page }),
+  ({ title, page }, { memory }, tab, signal) =>
+    planPageWrite(tab, { action: 'rename', title, page: resolvePage(memory, tab, page) }, signal),
+)
+
+const passage = z
+  .string()
+  .max(2000)
+  .regex(/^[^\p{Cc}]*$/u, 'Use text on one line, with no control characters.')
 const editPage = change(
   'edit_page',
   'text on a Confluence page',
-  'Replace exact text on a published page. Use only when the user directly requests Replace "OLD" with "NEW" on this page.',
-  noArgs,
-  async (_args, { userText }, _question, tab, signal) => {
-    const request = requestedPageEdit(userText)
-    if (!request) refuse('Ask the user to say Replace "OLD" with "NEW" on this page.')
+  "Replace one passage of a published page's text with new text, keeping the rest of the page and its formatting. " +
+    'The passage must appear once, within one paragraph or cell: read the page first and quote its current text.',
+  z
+    .strictObject({
+      before: passage
+        .refine((text) => text.trim().length > 0, 'Quote a passage.')
+        .describe('The exact text to replace.'),
+      after: passage.describe('The text that replaces it; empty to delete it.'),
+      page,
+    })
+    .refine(({ before, after }) => before !== after, 'The replacement is the same as the passage.'),
+  async ({ before, after, page }, { memory }, tab, signal) => {
+    const request = { before, after, page: resolvePage(memory, tab, page) }
     const plan = tab.instance.cloud
       ? await prepareCloudPageEdit(request, tab, signal)
       : await preparePageEdit(request, tab, signal)
@@ -186,101 +231,102 @@ const editPage = change(
   },
 )
 
-function pageStatus(action: 'trash' | 'restore') {
-  return change(
-    action === 'trash' ? 'trash_page' : 'restore_page',
-    'the status of a Confluence page',
-    action === 'trash'
-      ? 'Move a directly requested page to the recoverable trash.'
-      : 'Restore a trashed page directly specified by the user by link.',
-    noArgs,
-    async (_args, { userText }, _question, tab, signal) => {
-      const request = requestedPageStatus(userText)
-      if (request?.action !== action)
-        refuse('Ask the user to specify the page to trash or provide the link of the page to restore.')
-      if (tab.instance.cloud) {
-        if (action === 'restore') {
-          const plan = await prepareCloudRestore(tab, request.targetUrl, signal)
-          return {
-            preview: plan.preview,
-            confirm: plan.confirm,
-            async apply(signal) {
-              const data = await plan.apply(signal)
-              return { data, changed: data.changed }
-            },
-          }
-        }
-        const plan = await prepareCloudTrash(tab, request.targetUrl, signal)
-        return {
-          preview: plan.preview,
-          confirm: true,
-          async apply(signal) {
-            const data = await plan.apply(signal)
-            return { data, changed: data.changed }
-          },
-        }
-      }
-      const plan = await preparePageStatus(request, tab, signal)
+const trashPage = change(
+  'trash_page',
+  'the status of a Confluence page',
+  "Move a published page with no child pages to the space's recoverable trash. The user is asked first, each time. " +
+    'Trash only pages the user asked to remove.',
+  z.strictObject({ page }),
+  async ({ page }, { memory }, tab, signal) => {
+    const at = resolvePage(memory, tab, page)
+    if (tab.instance.cloud) {
+      const plan = await prepareCloudTrash(tab, at, signal)
       return {
         preview: plan.preview,
-        confirm: plan.page.status !== (action === 'trash' ? 'trashed' : 'current'),
+        confirm: true,
         async apply(signal) {
-          const data = await applyPageStatus(plan, signal)
+          const data = await plan.apply(signal)
           return { data, changed: data.changed }
         },
       }
+    }
+    const plan = await preparePageTrash(at, tab, signal)
+    return {
+      preview: plan.preview,
+      confirm: plan.page.status !== 'trashed',
+      async apply(signal) {
+        const data = await applyPageTrash(plan, signal)
+        return { data, changed: data.changed }
+      },
+    }
+  },
+)
+
+const parent = pageTarget.describe(
+  'The new parent page, in the same space: a page reference returned by a Confluence tool in this question, or a link to a page on this Confluence site.',
+)
+
+async function planOrganization(tab: ConfluenceTab, request: OrganizationRequest, signal?: AbortSignal): Promise<Plan> {
+  if (tab.instance.cloud) {
+    const plan = await prepareCloudOrganization(request, tab, signal)
+    return {
+      preview: plan.preview,
+      async apply(signal) {
+        const data = await plan.apply(signal)
+        return { data, changed: data.changed }
+      },
+    }
+  }
+  const plan = await prepareOrganization(request, tab, signal)
+  return {
+    preview: plan.preview,
+    async apply(signal) {
+      const data = await applyOrganization(plan, signal)
+      return { data, changed: data.changed }
     },
-  )
+  }
 }
 
-function organizePage(action: 'move' | 'copy') {
-  return change(
-    action === 'move' ? 'move_page' : 'copy_page',
-    'a Confluence page',
-    action === 'move'
-      ? 'Move one page under a parent in the same space using the destination link in the user message.'
-      : 'Copy a single page into the same space using the destination link and quoted title in the user message.',
-    noArgs,
-    async (_args, { userText }, _question, tab, signal) => {
-      const request = requestedOrganization(userText)
-      if (request?.action !== action)
-        refuse(
-          'Ask the user to specify the source page and parent link. Use Move this page under URL or Copy this page under URL as "TITLE".',
-        )
-      if (tab.instance.cloud) {
-        const plan = await prepareCloudOrganization(request, tab, signal)
-        return {
-          preview: plan.preview,
-          async apply(signal) {
-            const data = await plan.apply(signal)
-            return { data, changed: data.changed }
-          },
-        }
-      }
-      const plan = await prepareOrganization(request, tab, signal)
-      return {
-        preview: plan.preview,
-        async apply(signal) {
-          const data = await applyOrganization(plan, signal)
-          return { data, changed: data.changed }
-        },
-      }
-    },
-  )
-}
+const movePage = change(
+  'move_page',
+  'a Confluence page',
+  'Move a published page, with its children, under another page in the same space.',
+  z.strictObject({ page, parent }),
+  ({ page, parent }, { memory }, tab, signal) =>
+    planOrganization(
+      tab,
+      { action: 'move', page: resolvePage(memory, tab, page), parent: pageAt(memory, tab, parent) },
+      signal,
+    ),
+)
+
+const copyPage = change(
+  'copy_page',
+  'a Confluence page',
+  "Copy a published page's body as a new page under a page in the same space, with its own title. Pages with " +
+    'attachments or inline comments are not copied.',
+  z.strictObject({ page, parent, title: title.describe('The title of the copy, unique in the space.') }),
+  ({ page, parent, title }, { memory }, tab, signal) =>
+    planOrganization(
+      tab,
+      { action: 'copy', title, page: resolvePage(memory, tab, page), parent: pageAt(memory, tab, parent) },
+      signal,
+    ),
+)
 
 const changeLabel = change(
   'change_page_label',
   'a Confluence page label',
-  'Add or remove an ordinary label only when the user directly requests that exact label change on the current page.',
-  changeLabelArgs,
-  async ({ action, label }, { userText }, question, tab) => {
-    const request = requestedLabelChanges(userText)[question.nextLabel]
-    if (request?.action !== action || request.label !== label.toLowerCase())
-      throw new Error('Only the user can request a label change. Ask for the exact label on the intended page.')
-    question.nextLabel++
+  'Add or remove an ordinary label on a published page.',
+  z.strictObject({
+    action: z.enum(['add', 'remove']),
+    label: labelName.describe('The label, without a prefix or spaces.'),
+    page,
+  }),
+  async ({ action, label, page }, { memory }, tab) => {
+    const request = { action, label: label.toLowerCase(), page: resolvePage(memory, tab, page) }
     return {
-      preview: `${action === 'add' ? 'Add' : 'Remove'} the label "${request.label}" on the current page.`,
+      preview: `${action === 'add' ? 'Add' : 'Remove'} the label "${request.label}" ${action === 'add' ? 'to' : 'from'} the page.`,
       async apply(signal) {
         const data = tab.instance.cloud
           ? await applyCloudLabel(request, tab, signal)
@@ -294,12 +340,23 @@ const changeLabel = change(
 const addComment = change(
   'add_page_comment',
   'a Confluence page comment',
-  'Add a footer comment or reply from a direct user request. The exact comment and target come from the user message.',
-  noArgs,
-  async (_args, { userText }, _question, tab, signal) => {
-    const request = requestedComment(userText)
-    if (!request)
-      refuse('Ask the user to say Add comment "TEXT" on this page or Reply to comment ID with "TEXT" on this page.')
+  "Post a footer comment on a published page, or a reply to one of its footer comments. The page's watchers are " +
+    'notified, so comment only when the user asks for it.',
+  z.strictObject({
+    text: z
+      .string()
+      .max(4000)
+      .refine((text) => text.trim().length > 0, 'Write a comment.')
+      .describe('The comment, as plain text.'),
+    page,
+    replyTo: z
+      .string()
+      .regex(/^\d{1,20}$/)
+      .optional()
+      .describe('The id of the footer comment to reply to, from list_page_comments. Omit for a new comment.'),
+  }),
+  async ({ text, page, replyTo }, { memory }, tab, signal) => {
+    const request = { text, page: resolvePage(memory, tab, page), parentId: replyTo }
     if (tab.instance.cloud) {
       const plan = await prepareCloudComment(request, tab, signal)
       return {
@@ -319,37 +376,13 @@ const addComment = change(
   },
 )
 
-const uploadAttachment = change(
-  'upload_page_attachment',
-  'an attachment on a Confluence page',
-  'Upload or replace the local file the user selected and submitted using the attachment controls.',
-  noArgs,
-  async (_args, _context, question, tab, signal) => {
-    if (!question.attachment)
-      refuse('Choose a local file and select Upload attachment or Replace attachment in the panel.')
-    const plan = await prepareAttachmentUpload(question.attachment, tab, signal)
-    return {
-      preview: plan.preview,
-      confirm: true,
-      async apply(signal) {
-        return { data: await applyAttachmentUpload(plan, signal), changed: true }
-      },
-    }
-  },
-)
-
-const commonWrites = [pageWrite('create'), pageWrite('rename'), changeLabel, addComment]
-const trashPage = pageStatus('trash')
-const movePage = organizePage('move')
-const copyPage = organizePage('copy')
-const restorePage = pageStatus('restore')
-
 export const CONFLUENCE_WRITES = [
-  ...commonWrites,
+  createPage,
+  renamePage,
+  changeLabel,
+  addComment,
   editPage,
   trashPage,
-  restorePage,
   movePage,
   copyPage,
-  uploadAttachment,
 ]

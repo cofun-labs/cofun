@@ -69,7 +69,9 @@ export async function requireRetainedAccess(
           ? warning
           : 'Confluence did not report restrictions on the source or an ancestor. Check access before trying again.',
       )
-    if (hasRestriction(parsed.data.read) || (id === source.id && hasRestriction(parsed.data.update))) refuse(warning)
+    // A choice the model can change, or tell the user about: not a reason to stop the question.
+    if (hasRestriction(parsed.data.read) || (id === source.id && hasRestriction(parsed.data.update)))
+      throw new Error(warning)
   }
 }
 

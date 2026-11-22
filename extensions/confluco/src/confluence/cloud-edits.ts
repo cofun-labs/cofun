@@ -1,7 +1,7 @@
 // Published Cloud edits follow the service's draft reconciliation behavior.
 import { cloudPageLink } from './cloud'
 import { cloudRevision, readCloudRevision } from './cloud-writes'
-import { requireEditPassages, requestedReference, unverifiedWrite, type PageEditRequest } from './page-writes'
+import { unverifiedWrite, type PageEditRequest } from './page-writes'
 import { replaceStorageText } from './storage-edit'
 import { refuse, updateCloudPage, type ConfluenceTab } from './tab'
 import { z } from '../zod'
@@ -60,8 +60,7 @@ function preparedEdit(tab: ConfluenceTab, original: Revision, value: string, bef
 }
 
 export async function prepareCloudPageEdit(request: PageEditRequest, tab: ConfluenceTab, signal?: AbortSignal) {
-  requireEditPassages(request.before, request.after)
-  const page = await readCloudRevision(tab, requestedReference(tab, request.targetUrl), signal)
+  const page = await readCloudRevision(tab, request.page, signal)
   const value = replaceStorageText(page.body.storage.value, request.before, request.after)
   return preparedEdit(tab, page, value, request.before, request.after)
 }

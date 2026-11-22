@@ -26,7 +26,10 @@ const reply = {
   ancestors: [{ id: root.id, type: 'comment' }],
   body: body('<p>Reply text</p>'),
 }
-const add = { name: 'add_page_comment', arguments: '{}' }
+const add = (args: { text: string; replyTo?: string }) => ({
+  name: 'add_page_comment',
+  arguments: JSON.stringify(args),
+})
 const list = { name: 'list_page_comments', arguments: '{}' }
 
 async function openPanel() {
@@ -129,12 +132,8 @@ describe('published page discussions', () => {
       if (target.pathname.endsWith('/73')) return Response.json(posted)
       return Response.json(page)
     }
-    browser.ai.script.push({ toolCalls: [add] }, { reply: 'Posted and verified.' })
-    await user.click(screen.getByRole('textbox', { name: 'Message' }))
-    await user.paste(
-      parent ? `Reply to comment ${parent.id} with "${text}" on this page` : `Add comment "${text}" on this page`,
-    )
-    await user.click(screen.getByRole('button', { name: 'Send' }))
+    browser.ai.script.push({ toolCalls: [add({ text, replyTo: parent?.id })] }, { reply: 'Posted and verified.' })
+    await ask(user, parent ? 'Answer that comment for me.' : 'Leave a note for the team on this page.')
     expect(await screen.findByText('Posted and verified.')).toBeVisible()
     expect(results(browser)).toContain(pageUrl + '&focusedCommentId=73#comment-73')
     expect(results(browser)).toContain(`"parentId":${JSON.stringify(parent?.id ?? null)}`)
@@ -142,37 +141,39 @@ describe('published page discussions', () => {
     expect(browser.workspaceRequests.at(-1)?.url).toContain('/73?expand=')
   })
 
-  it.each([
-    ['Summarize the page', root, /Ask the user to say Add comment/],
-    [
-      'Reply to comment 71 with "QA" on this page',
-      { ...root, extensions: { location: 'inline' } },
-      /verified footer comment/,
-    ],
-    [
-      'Reply to comment 71 with "QA" on this page',
-      { ...root, container: { id: '43', type: 'page' } },
-      /comment on the intended page/,
-    ],
-  ])(
-    '[UC-CONFLUCO-CONFLUENCE-010-S03] rejects an unapproved request or wrong reply target (%s)',
-    async (message, parent, reason) => {
-      const { browser, user } = await openPanel()
-      browser.confluenceResponse = (url) => Response.json(new URL(url).pathname.endsWith('/71') ? parent : page)
-      browser.ai.script.push({ toolCalls: [add] })
-      await ask(user, message)
-      await answered()
-      expect(screen.getAllByText(reason).length).toBeGreaterThan(0)
-      expect(writes(browser)).toEqual([])
-    },
-  )
+  it('[UC-CONFLUCO-CONFLUENCE-010-S03] tells the model that an inline comment takes no reply, without posting', async () => {
+    const { browser, user } = await openPanel()
+    const inline = { ...root, extensions: { location: 'inline' } }
+    browser.confluenceResponse = (url) => Response.json(new URL(url).pathname.endsWith('/71') ? inline : page)
+    browser.ai.script.push(
+      { toolCalls: [add({ text: 'QA', replyTo: root.id })] },
+      { reply: 'That is an inline comment.' },
+    )
+    await ask(user, 'Answer that comment for me.')
+    expect(await screen.findByText('That is an inline comment.')).toBeVisible()
+    expect(results(browser)).toContain('Replies can only be added to a footer comment.')
+    expect(writes(browser)).toEqual([])
+  })
+
+  it('[UC-CONFLUCO-CONFLUENCE-010-S03] stops when the reply target is a comment on another page', async () => {
+    const { browser, user } = await openPanel()
+    const elsewhere = { ...root, container: { id: '43', type: 'page' } }
+    browser.confluenceResponse = (url) => Response.json(new URL(url).pathname.endsWith('/71') ? elsewhere : page)
+    const reply = add({ text: 'QA', replyTo: root.id })
+    browser.ai.script.push({ toolCalls: [reply, reply] })
+    await ask(user, 'Answer that comment for me.')
+    await answered()
+    expect(screen.getAllByText(/comment on the intended page/).length).toBeGreaterThan(0)
+    expect(writes(browser)).toEqual([])
+    expect(browser.ai.calls).toHaveLength(1)
+  })
 
   it('[UC-CONFLUCO-CONFLUENCE-010-S03] reports a server permission denial', async () => {
     const { browser, user } = await openPanel()
     browser.confluenceResponse = (_url, init) =>
       init?.method === 'POST' ? new Response(null, { status: 403 }) : Response.json(page)
-    browser.ai.script.push({ toolCalls: [add, add] })
-    await ask(user, 'Add comment "QA" on this page')
+    browser.ai.script.push({ toolCalls: [add({ text: 'QA' }), add({ text: 'QA' })] })
+    await ask(user, 'Leave a note for the team on this page.')
     await answered()
     expect(screen.getAllByText(/does not have permission/).length).toBeGreaterThan(0)
     expect(writes(browser)).toHaveLength(1)
@@ -194,10 +195,9 @@ describe('published page discussions', () => {
         if (new URL(url).pathname.endsWith('/71')) return Response.json({ ...root, body: body(storage) })
         return Response.json(page)
       }
-      browser.ai.script.push({ toolCalls: [add, add] })
-      await user.click(screen.getByRole('textbox', { name: 'Message' }))
-      await user.paste('Add comment "QA\n\nnote" on this page')
-      await user.click(screen.getByRole('button', { name: 'Send' }))
+      const comment = add({ text: 'QA\n\nnote' })
+      browser.ai.script.push({ toolCalls: [comment, comment] })
+      await ask(user, 'Leave a note for the team on this page.')
       await answered()
       expect(screen.getAllByText(reason).length).toBeGreaterThan(0)
       expect(writes(browser)).toHaveLength(1)
@@ -220,8 +220,8 @@ it('[UC-CONFLUCO-CONFLUENCE-010-S04] reports a rate limit verifying a posted com
     }
     return Response.json(page)
   }
-  browser.ai.script.push({ toolCalls: [add, add] })
-  await ask(user, 'Add comment "QA note" on this page')
+  browser.ai.script.push({ toolCalls: [add({ text: 'QA note' }), add({ text: 'QA note' })] })
+  await ask(user, 'Leave a note for the team on this page.')
   await answered()
   expect(screen.getAllByText(/comment may have been posted.*rate-limited/).length).toBeGreaterThan(0)
   expect(writes(browser)).toHaveLength(1)

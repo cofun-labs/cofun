@@ -1,43 +1,27 @@
 import { z } from '../zod'
 import { collection, collectionStart } from './collection'
-import { fetchPublishedPage, pageLink, pageReference, publishedPage, type PublishedPage } from './references'
+import {
+  fetchPublishedPage,
+  pageLink,
+  pageReference,
+  publishedPage,
+  type PageReference,
+  type PublishedPage,
+} from './references'
 import { verificationFailed, refuse, requireTab, writeConfluenceLabel, type ConfluenceTab } from './tab'
 
 const reference = pageReference.optional().describe('Omit to use the current published page.')
-const labelName = z
+export const labelsArgs = z.strictObject({ page: reference, start: collectionStart })
+export const labelName = z
   .string()
   .trim()
   .min(1)
   .max(255)
   .regex(/^[^\s\p{C}:]+$/u)
-export const labelsArgs = z.strictObject({ page: reference, start: collectionStart })
-export const changeLabelArgs = z.strictObject({
-  action: z.enum(['add', 'remove']),
-  label: labelName.describe('The exact ordinary label named in the user request, without a prefix or spaces.'),
-})
-export type LabelRequest = z.output<typeof changeLabelArgs>
-
-const englishRequest =
-  /^(?:please\s+)?(?<verb>add|remove)\s+(?:the\s+)?label\s+(?<name>`[^`]+`|"[^"]+"|'[^']+'|[^\s`"']+?)(?:\s+(?:to|from)\s+(?:this|the\s+current)\s+(?:published\s+)?page)?[.!]?$/iu
-const chineseRequest =
-  /^(?:请\s*)?(?:(?:给|在)(?:当前(?:的)?页面?|这(?:个)?页面?|本页|此页)(?:上)?\s*)?(?<verb>添加|加上|加|打上|贴上|移除|删除|去掉|去除|取消)\s*(?:一个|个)?标签\s*(?:[：:]\s*)?(?<name>`[^`]+`|"[^"]+"|“[^”]+”|'[^']+'|[^\s`"'“”]+?)[。！!]?$/u
-const addVerbs = new Set(['add', '添加', '加上', '加', '打上', '贴上'])
-
-/** Match complete, direct requests before the question reaches the model or any page is read. */
-export function requestedLabelChanges(text: string): LabelRequest[] {
-  const changes: LabelRequest[] = []
-  for (const clause of text.trim().split(/\s+(?:and then|then)\s+|\s*[；;]\s*/iu)) {
-    const groups = (englishRequest.exec(clause) ?? chineseRequest.exec(clause))?.groups
-    if (!groups?.verb || !groups.name) return []
-    const quoted = /^[`"'“]/u.test(groups.name)
-    const label = labelName.safeParse(quoted ? groups.name.slice(1, -1) : groups.name)
-    if (!label.success) return []
-    changes.push({
-      action: addVerbs.has(groups.verb.toLowerCase()) ? 'add' : 'remove',
-      label: label.data.toLowerCase(),
-    })
-  }
-  return changes
+export interface LabelRequest {
+  action: 'add' | 'remove'
+  label: string
+  page?: PageReference
 }
 
 export const confluenceLabel = z.object({ prefix: z.string().max(40), name: z.string().min(1).max(255) })
@@ -82,7 +66,7 @@ async function hasLabel(change: LabelTarget, signal?: AbortSignal) {
 
 export async function applyLabel(input: LabelRequest, target: ConfluenceTab | undefined, signal?: AbortSignal) {
   const tab = requireTab(target)
-  const page = await fetchPublishedPage(tab, undefined, publishedPage, '', signal)
+  const page = await fetchPublishedPage(tab, input.page, publishedPage, '', signal)
   const name = input.label.toLowerCase()
   const change = { tab, page, name }
   const expected = input.action === 'add'
@@ -90,7 +74,7 @@ export async function applyLabel(input: LabelRequest, target: ConfluenceTab | un
   const result = { page: pageLink(tab.instance, page), label: name, present: expected }
   if (before === expected) return { ...result, changed: false }
 
-  const current = await fetchPublishedPage(tab, undefined, publishedPage, '', signal)
+  const current = await fetchPublishedPage(tab, input.page, publishedPage, '', signal)
   if (current.id !== page.id)
     refuse('The page changed before the label could be updated. Ask again on the intended page.')
   await writeConfluenceLabel(

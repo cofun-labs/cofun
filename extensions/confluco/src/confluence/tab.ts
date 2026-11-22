@@ -104,7 +104,6 @@ const result = z.discriminatedUnion('kind', [
   z.object({
     kind: z.enum([
       'changed',
-      'not-restorable',
       'not-page',
       'auth',
       'unexpected-web-response',
@@ -122,8 +121,6 @@ const result = z.discriminatedUnion('kind', [
 ])
 
 const errors = {
-  'not-restorable':
-    'Confluco could not prepare the restore confirmation. Check the page and your session in Confluence.',
   changed: 'The Confluence tab changed. Open the intended page and ask again.',
   'not-page': 'Open a published Confluence page before asking Confluco to read it.',
   auth: 'Sign in to Confluence in the page tab, then ask again.',
@@ -145,17 +142,14 @@ export function refuse(message: string, mayHaveChanged = false): never {
 }
 
 type Query = Record<string, string | string[]>
-export type RestArea = 'api' | 'experimental' | 'cloud-v2' | 'cloud-restore' | 'cloud-attachment'
+export type RestArea = 'api' | 'experimental' | 'cloud-v2'
 type RestRequest = {
   area: RestArea
   resource: string
   query: Query
   method: 'GET' | 'POST' | 'PUT' | 'DELETE'
   body?: string
-  file?: { name: string; mediaType: string; base64: string }
 }
-
-export const attachmentSizeLimit = 10 * 1024 * 1024
 
 export class ConfluenceRequestError extends Error {
   readonly stopsQuestion: string
@@ -175,83 +169,6 @@ export function verificationFailed(message: string, cause?: unknown): never {
 export function requireTab(tab: ConfluenceTab | undefined): ConfluenceTab {
   if (!tab) refuse('Open a Confluence page in the current tab first.')
   return tab
-}
-
-const selectionLimit = 4000
-const editorSelectionResult = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('selection'), text: z.string().min(1).max(selectionLimit), chars: z.int().positive() }),
-  z.object({ kind: z.enum(['changed', 'not-editor', 'empty']) }),
-])
-
-export async function readEditorSelection(target: ConfluenceTab | undefined) {
-  const tab = requireTab(target)
-  if (!(await chrome.permissions.contains({ origins: [tab.instance.permission] })))
-    refuse('Confluco needs Chrome site access to this Confluence site. Ask again and allow it.')
-  const [frame] = await chrome.scripting
-    .executeScript({
-      target: { tabId: tab.tabId },
-      world: 'ISOLATED',
-      func: readSelection,
-      args: [tab.url, tab.instance.path, selectionLimit],
-    })
-    .catch(() => refuse('Could not access the editor. Open the intended Confluence tab and try again.'))
-  const parsed = editorSelectionResult.safeParse(frame?.result)
-  if (!parsed.success) refuse('Confluence did not return the expected editor selection.')
-  switch (parsed.data.kind) {
-    case 'selection':
-      if (!frame?.documentId) refuse('Confluco could not identify the editor document.')
-      return { tab, documentId: frame.documentId, text: parsed.data.text, chars: parsed.data.chars }
-    case 'changed':
-      refuse('The active tab changed. Select text in the intended editor and try again.')
-    case 'not-editor':
-      refuse('Open a supported Confluence editor and select text in the page body.')
-    case 'empty':
-      refuse('Select text in the Confluence editor before attaching it.')
-  }
-}
-
-export async function isEditorSelectionCurrent(tab: ConfluenceTab, documentId: string): Promise<boolean> {
-  try {
-    if (!(await chrome.permissions.contains({ origins: [tab.instance.permission] }))) return false
-    const [frame] = await chrome.scripting.executeScript({
-      target: { tabId: tab.tabId },
-      world: 'ISOLATED',
-      func: (expectedUrl: string) => {
-        const current = new URL(location.href)
-        current.hash = ''
-        return current.href === expectedUrl
-      },
-      args: [tab.url],
-    })
-    return frame?.documentId === documentId && frame.result === true
-  } catch {
-    return false
-  }
-}
-
-/** Runs in the isolated world of the captured top-level tab. */
-function readSelection(expectedUrl: string, contextPath: string, limit: number) {
-  const current = new URL(location.href)
-  current.hash = ''
-  if (current.href !== expectedUrl) return { kind: 'changed' }
-  const path = current.pathname.slice(contextPath.length).replace(/;[^/]*|%3bjsessionid(?:=|%3d)[^/]*/gi, '')
-  if (!/^\/pages\/(?:editpage|resumedraft|createpage)\.action$/.test(path)) return { kind: 'not-editor' }
-
-  const frame = document.querySelector<HTMLIFrameElement>('iframe#wysiwygTextarea_ifr')
-  const editor = frame?.contentDocument?.body
-  if (!editor || editor.getAttribute('contenteditable') !== 'true') return { kind: 'not-editor' }
-  const selection = editor.ownerDocument.getSelection()
-  if (
-    !selection?.anchorNode ||
-    !selection.focusNode ||
-    selection.isCollapsed ||
-    !editor.contains(selection.anchorNode) ||
-    !editor.contains(selection.focusNode)
-  )
-    return { kind: 'empty' }
-  const text = selection.toString().trim()
-  if (!text) return { kind: 'empty' }
-  return { kind: 'selection', text: text.slice(0, limit), chars: text.length }
 }
 
 export function restUrl(instance: Instance, resource: string, query: Query, area: RestArea): URL {
@@ -339,20 +256,6 @@ export function updateCloudPage(
   )
 }
 
-export function restoreCloudPage(tab: ConfluenceTab, pageId: string, key: string, signal?: AbortSignal) {
-  return sendConfluence(
-    tab,
-    {
-      area: 'cloud-restore',
-      resource: 'trash',
-      method: 'POST',
-      query: { key, contentId: pageId },
-    },
-    signal,
-    'Confluence rejected the restore. Check the page and your space administrator access.',
-  )
-}
-
 export function renameCloudPage(tab: ConfluenceTab, pageId: string, title: string, signal?: AbortSignal) {
   return sendConfluence(
     tab,
@@ -432,57 +335,6 @@ export function trashConfluencePage(target: ConfluenceTab, id: string, signal?: 
   )
 }
 
-export function restoreConfluencePage(target: ConfluenceTab, id: string, nextVersion: number, signal?: AbortSignal) {
-  return sendConfluence(
-    target,
-    {
-      area: 'api',
-      resource: `content/${id}`,
-      method: 'PUT',
-      query: { status: 'trashed' },
-      body: JSON.stringify({ id, status: 'current', version: { number: nextVersion } }),
-    },
-    signal,
-  )
-}
-
-export async function uploadConfluenceAttachment(
-  target: ConfluenceTab,
-  pageId: string,
-  attachmentId: string | undefined,
-  file: File,
-  signal?: AbortSignal,
-) {
-  signal?.throwIfAborted()
-  if (file.size > attachmentSizeLimit) refuse('Choose an attachment of at most 10 MiB.')
-  const base64 = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onerror = () => reject(reader.error)
-    reader.onload = () => {
-      if (typeof reader.result !== 'string' || !reader.result.includes(','))
-        return reject(new Error('Could not read the selected file.'))
-      resolve(reader.result.slice(reader.result.indexOf(',') + 1))
-    }
-    reader.readAsDataURL(file)
-  })
-  const collection = `content/${pageId}/child/attachment`
-  const upload = { name: file.name, mediaType: file.type, base64 }
-  return sendConfluence(
-    target,
-    target.instance.cloud
-      ? { area: 'cloud-attachment', resource: 'doattachfile.action', method: 'POST', query: { pageId }, file: upload }
-      : {
-          area: 'api',
-          resource: attachmentId ? `${collection}/${attachmentId.replace(/^att/, '')}/data` : collection,
-          method: 'POST',
-          query: attachmentId ? {} : { status: 'current' },
-          file: upload,
-        },
-    signal,
-    'Confluence rejected the upload. Check the file and attachment rules on the destination page.',
-  )
-}
-
 async function sendConfluence(target: ConfluenceTab, request: RestRequest, signal?: AbortSignal, rejection?: string) {
   signal?.throwIfAborted()
   if (!(await chrome.permissions.contains({ origins: [target.instance.permission] }))) {
@@ -537,8 +389,6 @@ async function sendConfluence(target: ConfluenceTab, request: RestRequest, signa
     const { kind } = response.data
     if (writing && ['unexpected-web-response', 'large', 'network', 'invalid'].includes(kind)) uncertain()
     if (kind === 'rejected' && rejection) refuse(rejection)
-    if (kind === 'rejected' && request.method === 'PUT' && request.query.status === 'trashed')
-      refuse('Confluence rejected the restore. Check the page in the space trash before trying again.')
     if (kind === 'rejected' && request.method === 'DELETE' && request.query.status === 'current')
       refuse('Confluence rejected moving this page to the trash. Review the page in Confluence before trying again.')
     if (
@@ -565,23 +415,10 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
   const actual = new URL(location.href)
   actual.hash = ''
   if (actual.href !== expectedUrl) return { kind: 'changed' }
-  const { area, query, method, body, file } = request
+  const { area, query, method, body } = request
   let { resource } = request
   let pageId: string | undefined
   const cloud = /(?:^|\.)atlassian\.net$/.test(actual.hostname)
-  const nativeUpload = area === 'cloud-attachment'
-  const nativeRestore = area === 'cloud-restore'
-  if (
-    nativeUpload &&
-    (!file ||
-      method !== 'POST' ||
-      resource !== 'doattachfile.action' ||
-      body !== undefined ||
-      Object.keys(query).length !== 1 ||
-      typeof query.pageId !== 'string' ||
-      !/^\d{1,20}$/.test(query.pageId))
-  )
-    return { kind: 'invalid' }
   if (cloud) {
     const jsonWrite = body !== undefined && Object.keys(query).length === 0
     const isLabel = /^content\/\d{1,20}\/label$/.test(resource)
@@ -615,27 +452,12 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
       actual.port ||
       contextPath !== '/wiki' ||
       !/^\/wiki(?:\/|$)/.test(actual.pathname) ||
-      (file !== undefined && !nativeUpload) ||
-      (!nativeUpload &&
-        !cloudRead &&
-        !cloudWrite &&
-        !(
-          nativeRestore &&
-          resource === 'trash' &&
-          method === 'POST' &&
-          body === undefined &&
-          Object.keys(query).length === 2 &&
-          typeof query.key === 'string' &&
-          query.key.length > 0 &&
-          query.key.length <= 255 &&
-          typeof query.contentId === 'string' &&
-          /^\d{1,20}$/.test(query.contentId)
-        ))
+      (!cloudRead && !cloudWrite)
     )
       return { kind: 'invalid' }
-  } else if (area === 'cloud-v2' || nativeRestore || nativeUpload) return { kind: 'invalid' }
-  if (resource === 'current-page' || nativeUpload) {
-    if (!nativeUpload && ((area !== 'api' && area !== 'cloud-v2') || method !== 'GET')) return { kind: 'invalid' }
+  } else if (area === 'cloud-v2') return { kind: 'invalid' }
+  if (resource === 'current-page') {
+    if ((area !== 'api' && area !== 'cloud-v2') || method !== 'GET') return { kind: 'invalid' }
     const path = actual.pathname.slice(contextPath.length).replace(/;[^/]*|%3bjsessionid(?:=|%3d)[^/]*/gi, '')
     const type = document.querySelector<HTMLMetaElement>('meta[name="ajs-content-type"]')?.content
     const metaId = document.querySelector<HTMLMetaElement>('meta[name="ajs-page-id"]')?.content
@@ -651,9 +473,7 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
       if (id && (!metaId || metaId === id)) pageId = id
     }
     if (!pageId || !/^\d{1,20}$/.test(pageId)) return { kind: 'not-page' }
-    if (nativeUpload) {
-      if (pageId !== query.pageId) return { kind: 'changed' }
-    } else resource = (cloud ? 'pages/' : 'content/') + pageId
+    resource = (cloud ? 'pages/' : 'content/') + pageId
   }
 
   if (!cloud) {
@@ -661,33 +481,16 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
       return { kind: 'invalid' }
     const labelResource = /^content\/\d{1,20}\/label$/.test(resource)
     const pageResource = /^content\/\d{1,20}$/.test(resource)
-    const attachmentCreate = /^content\/\d{1,20}\/child\/attachment$/.test(resource)
-    const attachmentReplace = /^content\/\d{1,20}\/child\/attachment\/\d{1,20}\/data$/.test(resource)
-    if (file) {
-      if (
-        area !== 'api' ||
-        method !== 'POST' ||
-        body !== undefined ||
-        !(
-          (attachmentCreate && query.status === 'current' && Object.keys(query).length === 1) ||
-          (attachmentReplace && Object.keys(query).length === 0)
-        )
-      )
-        return { kind: 'invalid' }
-    } else if (method === 'POST' && resource !== 'content' && !labelResource) return { kind: 'invalid' }
-    if (method === 'PUT' && !pageResource) return { kind: 'invalid' }
+    if (method === 'POST' && resource !== 'content' && !labelResource) return { kind: 'invalid' }
+    // A page is updated with no query: one with a status could bring it back from the trash.
+    if (method === 'PUT' && (!pageResource || Object.keys(query).length)) return { kind: 'invalid' }
     if (method === 'DELETE' && !labelResource) {
       // Deleting content in any other status could purge it. Only a current page may enter the trash.
       if (!pageResource || query.status !== 'current' || Object.keys(query).length !== 1) return { kind: 'invalid' }
     }
   }
-  const apiPath =
-    nativeRestore || nativeUpload
-      ? `${contextPath}/pages/`
-      : area === 'cloud-v2'
-        ? `${contextPath}/api/v2/`
-        : `${contextPath}/rest/${area}/`
-  const endpoint = new URL(actual.origin + apiPath + (nativeRestore ? 'restoretrashitem.action' : resource))
+  const apiPath = area === 'cloud-v2' ? `${contextPath}/api/v2/` : `${contextPath}/rest/${area}/`
+  const endpoint = new URL(actual.origin + apiPath + resource)
   if (endpoint.origin !== actual.origin || !endpoint.pathname.startsWith(apiPath) || endpoint.hash || endpoint.search)
     return { kind: 'invalid' }
   endpoint.search = new URLSearchParams(
@@ -700,67 +503,33 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
   globalThis.cofunConfluenceReads ??= new Map()
   globalThis.cofunConfluenceReads.set(requestId, controller)
   const cap = 1_000_000
-  let restoreSubmitted = false
   try {
-    let payload: BodyInit | undefined = body
-    const headers: Record<string, string> = { Accept: nativeRestore || nativeUpload ? 'text/html' : 'application/json' }
-    if (file) {
-      const decoded = atob(file.base64)
-      const bytes = Uint8Array.from(decoded, (character) => character.charCodeAt(0))
-      const form = new FormData()
-      form.append(
-        nativeUpload ? 'file_0' : 'file',
-        new Blob([bytes], { type: file.mediaType || 'application/octet-stream' }),
-        file.name,
-      )
-      payload = form
-      headers['X-Atlassian-Token'] = nativeUpload ? 'no-check' : 'nocheck'
-      if (nativeUpload) headers['X-Requested-With'] = 'XMLHttpRequest'
-    } else if (body !== undefined) headers['Content-Type'] = 'application/json'
+    const headers: Record<string, string> = { Accept: 'application/json' }
+    if (body !== undefined) headers['Content-Type'] = 'application/json'
     const response = await fetch(endpoint.href, {
-      method: nativeRestore ? 'GET' : method,
+      method,
       credentials: 'same-origin',
       redirect: 'manual',
       referrerPolicy: 'no-referrer',
       headers,
-      body: payload,
-      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(file ? 60_000 : 15_000)]),
+      body,
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
     })
-    function failure(response: Response): { kind: Exclude<z.infer<typeof result>['kind'], 'ok'> } | undefined {
-      if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400))
-        return { kind: 'unexpected-web-response' }
-      if (response.status === 401) return { kind: 'auth' }
-      if (response.status === 400 || (file && response.status === 413)) return { kind: 'rejected' }
-      if (response.status === 403) return { kind: 'forbidden' }
-      if (response.status === 404) return { kind: 'missing' }
-      if (response.status === 405 || response.status === 501) return { kind: 'unsupported' }
-      if (response.status === 409) return { kind: 'conflict' }
-      if (response.status === 429) return { kind: 'limited' }
-      if (!response.ok) return { kind: 'network' }
-    }
-    const failed = failure(response)
-    if (failed)
-      return nativeRestore && ['unexpected-web-response', 'network', 'invalid', 'large'].includes(failed.kind)
-        ? { kind: 'not-restorable' }
-        : failed
+    if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400))
+      return { kind: 'unexpected-web-response' }
+    if (response.status === 401) return { kind: 'auth' }
+    if (response.status === 400) return { kind: 'rejected' }
+    if (response.status === 403) return { kind: 'forbidden' }
+    if (response.status === 404) return { kind: 'missing' }
+    if (response.status === 405 || response.status === 501) return { kind: 'unsupported' }
+    if (response.status === 409) return { kind: 'conflict' }
+    if (response.status === 429) return { kind: 'limited' }
+    if (!response.ok) return { kind: 'network' }
     if (response.status === 204 && method === 'DELETE') return { kind: 'ok', status: response.status, data: null }
     const contentType = response.headers.get('content-type') ?? ''
-    if (nativeUpload) {
-      // The native action returns an HTML page. The caller verifies the exact attachment with REST.
-      void response.body?.cancel()
-      if (response.status !== 200 || !/^text\/html(?:;|$)/i.test(contentType)) return { kind: 'invalid' }
-      return { kind: 'ok', status: response.status, data: null }
-    }
-    if (nativeRestore ? !/^text\/html(?:;|$)/i.test(contentType) : !/^application\/json(?:;|$)/i.test(contentType))
-      return {
-        kind: nativeRestore
-          ? 'not-restorable'
-          : /^text\/html(?:;|$)/i.test(contentType)
-            ? 'unexpected-web-response'
-            : 'invalid',
-      }
-    if (Number(response.headers.get('content-length')) > cap || !response.body)
-      return { kind: nativeRestore ? 'not-restorable' : 'large' }
+    if (!/^application\/json(?:;|$)/i.test(contentType))
+      return { kind: /^text\/html(?:;|$)/i.test(contentType) ? 'unexpected-web-response' : 'invalid' }
+    if (Number(response.headers.get('content-length')) > cap || !response.body) return { kind: 'large' }
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
@@ -772,71 +541,18 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
       size += part.value.byteLength
       if (size > cap) {
         await reader.cancel()
-        return { kind: nativeRestore ? 'not-restorable' : 'large' }
+        return { kind: 'large' }
       }
       json += decoder.decode(part.value, { stream: true })
     }
-    const text = json + decoder.decode()
-    if (nativeRestore) {
-      const html = new DOMParser().parseFromString(text, 'text/html')
-      const expected = actual.origin + contextPath + '/pages/dorestoretrashitem.action'
-      const forms = [...html.forms].filter(
-        (form) =>
-          form.method.toLowerCase() === 'post' &&
-          new URL(form.getAttribute('action') ?? '', endpoint).href === expected,
-      )
-      if (forms.length !== 1) return { kind: 'not-restorable' }
-      const form = forms[0]
-      const field = (name: string) => {
-        const inputs = [...form.querySelectorAll('input')].filter((input) => input.name === name)
-        return inputs.length === 1 ? inputs[0].value : undefined
-      }
-      const key = field('key')
-      const contentId = field('contentId')
-      const token = field('atl_token')
-      const confirm = field('confirm')
-      if (
-        !contentId ||
-        !key ||
-        contentId !== query.contentId ||
-        key !== query.key ||
-        !token ||
-        token.length > 8192 ||
-        !confirm ||
-        confirm.length > 255
-      )
-        return { kind: 'not-restorable' }
-      const atPost = new URL(location.href)
-      atPost.hash = ''
-      if (atPost.href !== expectedUrl) return { kind: 'changed' }
-      // The CSRF value stays inside this isolated tab and is never returned to the extension.
-      restoreSubmitted = true
-      const posted = await fetch(expected, {
-        method: 'POST',
-        credentials: 'same-origin',
-        redirect: 'manual',
-        referrerPolicy: 'no-referrer',
-        headers: { Accept: 'text/html', 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ atl_token: token, key, contentId, confirm }),
-        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
-      })
-      // The native action may redirect. Never follow it; the caller may verify the same page once.
-      const denied = failure(posted)
-      void posted.body?.cancel()
-      if (denied) return denied
-      // Native success is an HTML response. The caller verifies the page with a separate REST read.
-      if (posted.status !== 200 || !/^text\/html(?:;|$)/i.test(posted.headers.get('content-type') ?? ''))
-        return { kind: 'invalid' }
-      return { kind: 'ok', status: posted.status, data: null }
-    }
     try {
-      const data: unknown = JSON.parse(text)
+      const data: unknown = JSON.parse(json + decoder.decode())
       return { kind: 'ok', pageId, status: response.status, data }
     } catch {
       return { kind: 'invalid' }
     }
   } catch {
-    return { kind: nativeRestore && !restoreSubmitted ? 'not-restorable' : 'network' }
+    return { kind: 'network' }
   } finally {
     globalThis.cofunConfluenceReads.delete(requestId)
   }
