@@ -3,14 +3,12 @@ import { requireRetainedAccess } from './history'
 import {
   findTitleInSpace,
   readWrittenPage,
-  requestedReference,
   samePageLocation,
   storedFields,
   storedPage,
-  title,
   unverifiedWrite,
 } from './page-writes'
-import { fetchPublishedPage, pageLink, publishedPage } from './references'
+import { fetchPublishedPage, pageLink, publishedPage, type PageReference } from './references'
 import {
   createConfluenceContent,
   getConfluence,
@@ -23,30 +21,8 @@ import {
 type Source = z.output<typeof storedPage>
 const parentPage = storedPage.pick({ id: true, type: true, status: true, title: true, space: true, ancestors: true })
 type Parent = z.output<typeof parentPage>
-type OrganizationTarget = { sourceUrl?: string; destinationUrl: string }
+type OrganizationTarget = { page?: PageReference; parent: PageReference }
 export type OrganizationRequest = OrganizationTarget & ({ action: 'move' } | { action: 'copy'; title: string })
-
-const moveEnglish =
-  /^(?:please\s+)?move\s+(?:this\s+page|(?<source>https?:\/\/[^\s]+))\s+under\s+(?<destination>https?:\/\/[^\s]+?)[.!]?$/iu
-const copyEnglish =
-  /^(?:please\s+)?copy\s+(?:this\s+page|(?<source>https?:\/\/[^\s]+))\s+under\s+(?<destination>https?:\/\/[^\s]+)\s+as\s+(?<title>"[^"\r\n]+"|“[^”\r\n]+”|`[^`\r\n]+`)[.!]?$/iu
-const moveChinese =
-  /^(?:请\s*)?(?:把|将)(?:当前页面?|本页|这页)移动到\s*(?<destination>https?:\/\/[^\s]+?)(?:\s*下)?[。！!]?$/u
-const copyChinese =
-  /^(?:请\s*)?(?:把|将)(?:当前页面?|本页|这页)复制到\s*(?<destination>https?:\/\/[^\s]+?)\s*(?:下)?[，,]?\s*(?:命名为|标题为)\s*(?<title>"[^"\r\n]+"|“[^”\r\n]+”|`[^`\r\n]+`)[。！!]?$/u
-
-export function requestedOrganization(message: string): OrganizationRequest | undefined {
-  const text = message.trim()
-  const copy = (copyEnglish.exec(text) ?? copyChinese.exec(text))?.groups
-  if (copy) {
-    const parsed = title.safeParse(copy.title.slice(1, -1))
-    if (!parsed.success) return undefined
-    return { action: 'copy', title: parsed.data, destinationUrl: copy.destination, sourceUrl: copy.source }
-  }
-  const move = (moveEnglish.exec(text) ?? moveChinese.exec(text))?.groups
-  if (move) return { action: 'move', destinationUrl: move.destination, sourceUrl: move.source }
-  return undefined
-}
 
 function lineage(parent: Parent) {
   return [...parent.ancestors, { id: parent.id }]
@@ -70,7 +46,7 @@ function requireCompatibleAccess(
 
 export function requireCopyableStorage(body: string) {
   if (/<(?:ri:attachment|ac:inline-comment-marker)(?:\s|\/?>)/i.test(body))
-    refuse('This page uses attachment or inline comment references. Use Confluence to copy those with the page.')
+    throw new Error('This page uses attachment or inline comment references. The user can copy it in Confluence.')
 }
 
 async function requireBodyOnlyCopy(tab: ConfluenceTab, source: Source, signal?: AbortSignal) {
@@ -79,7 +55,7 @@ async function requireBodyOnlyCopy(tab: ConfluenceTab, source: Source, signal?: 
   const parsed = z.object({ results: z.array(z.unknown()) }).safeParse(response.data)
   if (!parsed.success) refuse('Confluence did not report whether the page has attachments.')
   if (parsed.data.results.length)
-    refuse('This page has attachments. Use Confluence to copy the page with its attachments.')
+    throw new Error('This page has attachments. The user can copy it with its attachments in Confluence.')
 }
 
 export async function prepareOrganization(
@@ -88,15 +64,16 @@ export async function prepareOrganization(
   signal?: AbortSignal,
 ) {
   const tab = requireTab(target)
-  const sourceRef = requestedReference(tab, request.sourceUrl)
-  const parentRef = requestedReference(tab, request.destinationUrl)
+  const sourceRef = request.page
+  const parentRef = request.parent
   const source = await fetchPublishedPage(tab, sourceRef, storedPage, storedFields, signal)
   const parent = await fetchPublishedPage(tab, parentRef, parentPage, 'space,ancestors', signal)
-  if (source.space.key !== parent.space.key) refuse('Choose a destination in the same Confluence space.')
+  if (source.space.key !== parent.space.key) throw new Error('Choose a parent in the same Confluence space.')
   if (request.action === 'move') {
-    if (!source.ancestors.length) refuse('Move a page with an existing parent. Use Confluence for top-level pages.')
+    if (!source.ancestors.length)
+      throw new Error('Confluco does not move top-level pages. The user can move it in Confluence.')
     if (lineage(parent).some(({ id }) => id === source.id))
-      refuse('A page cannot be moved under itself or its descendants.')
+      throw new Error('A page cannot be moved under itself or its descendants.')
   } else await requireBodyOnlyCopy(tab, source, signal)
   await requireCompatibleAccess(tab, source, parent, request, signal)
   const from = pageLink(tab.instance, source)
@@ -127,7 +104,7 @@ export async function applyOrganization(plan: Awaited<ReturnType<typeof prepareO
   if (request.action === 'copy') {
     await requireBodyOnlyCopy(tab, current, signal)
     const existing = await findTitleInSpace(tab, request.title, destination.space.key, signal)
-    if (existing) refuse('A page with that title already exists in the destination space. Choose a different title.')
+    if (existing) throw new Error('A page with that title already exists in the space. Choose a different title.')
     const response = await createConfluenceContent(
       tab,
       { type: 'page', title: request.title, space: destination.space, ancestors, body: source.body },

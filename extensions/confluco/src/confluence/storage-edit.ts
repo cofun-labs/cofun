@@ -1,4 +1,4 @@
-import { refuse } from './tab'
+// What can't be edited goes back to the model as a plain error: it can read the page and choose another passage.
 
 const escaped: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }
 const textContainers = new Set([
@@ -37,7 +37,7 @@ function textOffsets(raw: string, text: string, decoder: HTMLTextAreaElement) {
     let shift = 0
     for (const entity of entities) {
       if (index <= entity.decodedStart) break
-      if (index < entity.decodedEnd) refuse('The selected text splits a Confluence character reference.')
+      if (index < entity.decodedEnd) throw new Error('The passage splits a Confluence character reference.')
       shift = entity.rawEnd - entity.decodedEnd
     }
     return index + shift
@@ -49,7 +49,7 @@ function textOffsets(raw: string, text: string, decoder: HTMLTextAreaElement) {
 }
 
 function ambiguous(): never {
-  refuse('That text appears more than once. Quote a longer, unique passage before asking to edit it.')
+  throw new Error('That text appears more than once on the page. Quote a longer, unique passage.')
 }
 
 /** Replace one text passage without reserializing tags, attributes, or neighboring text. */
@@ -81,10 +81,10 @@ export function replaceStorageText(storage: string, text: string, replacement: s
     }
     tag.lastIndex = cursor
     const token = tag.exec(storage)
-    if (!token) refuse('This page contains storage markup that Confluco cannot safely edit.')
+    if (!token) throw new Error('This page contains storage markup that Confluco cannot safely edit.')
     const [_, closing, name, selfClosing] = token
     if (closing) {
-      if (selfClosing || stack.pop()?.name !== name) refuse('This page contains unbalanced storage markup.')
+      if (selfClosing || stack.pop()?.name !== name) throw new Error('This page contains unbalanced storage markup.')
     } else if (!selfClosing) {
       // Namespaced elements can hold metadata, even when their contents look like plain text.
       const lower = name.toLowerCase()
@@ -93,14 +93,18 @@ export function replaceStorageText(storage: string, text: string, replacement: s
     }
     cursor = tag.lastIndex
   }
-  if (stack.length) refuse('This page contains unbalanced storage markup.')
+  if (stack.length) throw new Error('This page contains unbalanced storage markup.')
   if (!match)
-    refuse('That exact passage was not found in one editable text segment. Quote the current text and try again.')
+    throw new Error(
+      'That exact passage is not in one editable text segment of the page. Read the page and quote its current text.',
+    )
   // Confluence 8.5 encodes double quotes and leaves apostrophes literal in stored text.
   const escapedText = replacement.replace(/[&<>"]/g, (character) => escaped[character])
   const joined =
     storage.slice(Math.max(0, match.start - 2), match.start) + escapedText + storage.slice(match.end, match.end + 2)
   if (joined.includes(']]>'))
-    refuse('This replacement would create a reserved markup sequence. Include the neighboring text in your request.')
+    throw new Error(
+      'This replacement would create a reserved markup sequence. Include the neighboring text in the passage.',
+    )
   return storage.slice(0, match.start) + escapedText + storage.slice(match.end)
 }

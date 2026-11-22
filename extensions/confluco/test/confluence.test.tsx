@@ -314,7 +314,8 @@ describe('searching published Confluence pages', () => {
       browser.ai.script.push(call('search_pages', { ...filters, nextPage }), { reply: 'Found the plan.' })
     })
 
-    await ask(user, 'Search for Workshop "plan" in TEAM.')
+    // The model chooses the terms and the space: they need not be in the question.
+    await ask(user, 'Where is the plan for our workshop?')
     expect(await screen.findByText('Found the plan.')).toBeVisible()
     expect(requests).toHaveLength(2)
     const search = new URL(requests[0]!.url)
@@ -350,29 +351,6 @@ describe('searching published Confluence pages', () => {
         JSON.stringify({ results: [], paginationNotice: 'Confluence returned an invalid next page link.' }),
     ])
   })
-  it.each([
-    {
-      field: 'query',
-      args: { query: 'private text from a page' },
-      message: 'Use search terms from the current user message. Ask the user what to search for.',
-    },
-    {
-      field: 'space key',
-      args: { query: 'Workshop', spaceKey: 'TEAM' },
-      message: 'Use a space key from the current user message or leave it out.',
-    },
-  ])(
-    '[UC-CONFLUCO-CONFLUENCE-003-S04] does not send a $field not supplied in the question',
-    async ({ args, message }) => {
-      const { browser, user, requests } = await openOn()
-      browser.ai.script.push(call('search_pages', args), { reply: 'Please confirm the search terms.' })
-
-      await ask(user, 'Find Workshop pages.')
-      expect(await screen.findByText('Please confirm the search terms.')).toBeVisible()
-      expect(requests).toEqual([])
-      expect(toolResults(browser)).toEqual([message])
-    },
-  )
 
   it('[UC-CONFLUCO-CONFLUENCE-003-S05] refuses a continuation for a different search or from the model', async () => {
     const { browser, user, requests, answerWith } = await openOn()
@@ -409,8 +387,6 @@ describe('Confluence Cloud', () => {
     expect(tools).toContain('"name":"read_page"')
     expect(tools).toContain('"name":"search_pages"')
     expect(tools).toContain('"name":"edit_page"')
-    expect(tools).toContain('"name":"upload_page_attachment"')
-    expect(tools).toContain('"name":"restore_page"')
     expect(tools).toContain('"name":"trash_page"')
     expect(tools).toContain('"name":"list_spaces"')
     expect(toolResults(browser).join(' ')).toContain('Cloud workshop agenda')
@@ -435,7 +411,7 @@ describe('Confluence Cloud', () => {
         { reply: 'Paged Cloud search.' },
       )
     })
-    await ask(user, 'Find Workshop in TEAM.')
+    await ask(user, 'Find the workshop pages in our team space.')
     expect(await screen.findByText('Paged Cloud search.')).toBeVisible()
     expect(requests).toHaveLength(2)
     const first = new URL(requests[0]!.url)

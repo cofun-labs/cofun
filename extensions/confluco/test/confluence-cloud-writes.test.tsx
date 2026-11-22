@@ -81,7 +81,7 @@ it.each(['created', 'duplicate', 'invalid continuation', 'rejected', 'denied', '
       expect(target.pathname).toBe(pages + '/42')
       return Response.json(page)
     }
-    const create = call('create_page', { title: child.title })
+    const create = call('create_page', { title: child.title, text: 'Literal <tag> & text' })
     browser.ai.script.push(
       {
         toolCalls: ['invalid continuation', 'rejected', 'denied', 'uncertain'].includes(outcome)
@@ -90,7 +90,7 @@ it.each(['created', 'duplicate', 'invalid continuation', 'rejected', 'denied', '
       },
       { reply: 'Finished checking creation.' },
     )
-    await ask(user, 'Create page "Child fixture" under this page with text "Literal <tag> & text"')
+    await ask(user, 'Start a child page for the notes.')
     await screen.findByRole('button', { name: 'Send' })
     expect(writes(browser)).toHaveLength(['duplicate', 'invalid continuation'].includes(outcome) ? 0 : 1)
     if (outcome === 'created') expect(results(browser)).toContain('"bodyVerified":true')
@@ -175,7 +175,9 @@ it.each(['add', 'remove'])(
     await ask(user, adding ? 'Add label sample-label to this page' : 'Remove label sample-label from this page')
     await screen.findByRole('button', { name: 'Send' })
     expect(screen.getAllByText(/Check the page before trying again/).length).toBeGreaterThan(0)
+    // The preview's read of the page, the label checks, then the one write: never a second.
     expect(browser.workspaceRequests.map(({ init }) => init?.method)).toEqual([
+      'GET',
       'GET',
       'GET',
       'GET',
@@ -220,11 +222,9 @@ it.each(['footer', 'reply', 'different page'])(
       expect(pathname).toBe(pages + '/42')
       return Response.json(page)
     }
-    browser.ai.script.push({ toolCalls: [call('add_page_comment')] }, { reply: 'Comment checked.' })
-    await ask(
-      user,
-      reply ? 'Reply to comment 71 with "QA & <note>" on this page' : 'Add comment "QA & <note>" on this page',
-    )
+    const comment = call('add_page_comment', { text: 'QA & <note>', ...(reply && { replyTo: parent.id }) })
+    browser.ai.script.push({ toolCalls: [comment] }, { reply: 'Comment checked.' })
+    await ask(user, reply ? 'Answer that comment for me.' : 'Leave a note for the team on this page.')
     await screen.findByRole('button', { name: 'Send' })
     expect(writes(browser)).toHaveLength(target === 'different page' ? 0 : 1)
     if (target === 'different page')

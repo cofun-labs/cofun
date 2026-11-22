@@ -10,9 +10,13 @@ Web searches and pages rendered in a browser cost credits, also when your own mo
 
 Open a page on your Confluence site, signed in as usual, and ask. The first time Confluco needs the site, it asks you to allow it, and Chrome asks too. This works on Confluence Cloud (`https://team.atlassian.net/wiki`) and on self-managed Confluence. On either site type, you can read the current page, search published content, browse spaces and page trees, and inspect versions, access, labels, discussions and attachments.
 
-In Edit mode on either site type, you can ask to create a published child page, rename a page, add or remove a label, or post a footer comment or reply. For example, ask `Create page "Notes" under this page`. You can also move a page or copy its body within the space and confirm moving an eligible page to the trash. You can also replace exact published text and restore a page by its link with space administrator access. On Cloud, publishing an edit can merge into or overwrite an unpublished draft. To undo a change, use Confluence: restore an earlier version from the page history, or a page from the space trash.
+In Edit mode, ask for what you want done, and Confluco works out the changes: it can create published child pages, rename pages, change text on a page, add or remove labels, post footer comments and replies, move pages or copy a page's body within a space, and move a page to the trash. For example, ask to tidy this page's meeting notes, or to move last year's meeting notes under Archive. On Cloud, publishing an edit can merge into or overwrite an unpublished draft.
 
-Use **Confluence** in the composer to select a file and confirm an upload or replacement on the current published page. On Cloud, Confluence matches attachments by filename. A concurrent same-name upload can receive the selected file as a new version. On a self-managed site you can also use **Attach editor selection**.
+> [!WARNING]
+> **It edits without asking first.** Confluco makes its changes as soon as it decides to. Moving a page to the trash is the one thing it asks you about, every time. Each change is shown in the side panel as it happens. Confluco has no undo: in Confluence, restore an earlier version from the page history, or a page from the space's trash. To keep it from changing anything, switch the message box to **Read only** with the pencil button at its bottom left.
+
+> [!CAUTION]
+> **Be careful with pages you don't control.** A team wiki holds text written by other people, and Confluco reads it: pages, comments, search results, and web pages you ask about. An instruction hidden in that text could make it act as you without anyone being asked, for example by changing a colleague's page, or copying something private into a page or a comment that others can read. Comments also notify people. Page history can undo a change, but not what someone read in the meantime. [More on this trade-off](../../docs/security.md#accepted-writes-without-approval).
 
 ## Try the development build
 

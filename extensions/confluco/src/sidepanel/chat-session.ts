@@ -17,7 +17,6 @@ import {
 import { answering, type ModelSettings } from '@cofun/agent/models'
 import type { Mode } from '@cofun/agent/mode'
 import { track } from '../analytics'
-import type { AttachmentUpload } from '../confluence/attachments'
 import { activeTab, confluenceTabAt } from '../confluence/tab'
 import { titleFor, type Session, type SessionStore } from '../sessions'
 import { currentTabNote } from '../tools/current'
@@ -130,7 +129,6 @@ export interface Question {
   context: string
   /** The mode the composer showed; only right as the panel opens may it not be read yet. */
   mode?: Mode
-  attachment?: AttachmentUpload
 }
 
 /**
@@ -228,8 +226,6 @@ export class ChatSession {
     this.memory.confluenceQuestion = {
       captured,
       tab: tab.catch(() => undefined),
-      attachment: q.attachment,
-      nextLabel: 0,
     }
 
     // Where this question's reply goes in the list.

@@ -1,8 +1,7 @@
 import { z } from '../zod'
 import { collection, collectionStart } from './collection'
-import { requestedReference } from './page-writes'
 import { readableText } from './readable-text'
-import { fetchPublishedPage, pageLink, pageReference, publishedPage } from './references'
+import { fetchPublishedPage, pageLink, pageReference, publishedPage, type PageReference } from './references'
 import {
   verificationFailed,
   createConfluenceContent,
@@ -44,22 +43,9 @@ export const commentsArgs = z.strictObject({
 
 export interface CommentRequest {
   text: string
-  targetUrl?: string
+  page?: PageReference
+  /** The comment it replies to, if it is a reply. */
   parentId?: string
-}
-
-const addEnglish =
-  /^(?:please\s+)?(?:add|post)\s+(?:a\s+)?(?:footer\s+)?comment\s+(?<text>"[^"]+"|“[^”]+”|`[^`]+`)\s+(?:on|to)\s+(?:this\s+page|(?<target>https?:\/\/[^\s]+?))[.!]?$/iu
-const replyEnglish =
-  /^(?:please\s+)?reply\s+to\s+comment\s+(?<parent>\d{1,20})\s+with\s+(?<text>"[^"]+"|“[^”]+”|`[^`]+`)\s+(?:on|to)\s+(?:this\s+page|(?<target>https?:\/\/[^\s]+?))[.!]?$/iu
-const commentChinese =
-  /^(?:请\s*)?在(?:当前页面?|本页|这页)(?:上)?\s*(?:评论|添加评论|回复评论\s*(?<parent>\d{1,20})\s*[：:]?)\s*(?<text>"[^"]+"|“[^”]+”|`[^`]+`)[。！!]?$/u
-
-export function requestedComment(message: string): CommentRequest | undefined {
-  const input = message.trim()
-  const match = (addEnglish.exec(input) ?? replyEnglish.exec(input) ?? commentChinese.exec(input))?.groups
-  if (!match) return undefined
-  return { text: match.text.slice(1, -1).replace(/\r\n?/g, '\n'), targetUrl: match.target, parentId: match.parent }
 }
 
 function location(value: z.output<typeof comment>): 'footer' | 'inline' | 'unknown' {
@@ -109,14 +95,12 @@ async function readComment(tab: ConfluenceTab, id: string, pageId: string, signa
 }
 
 export async function prepareComment(request: CommentRequest, target: ConfluenceTab | undefined, signal?: AbortSignal) {
-  if (!request.text.trim() || request.text.length > 4000)
-    refuse('Write a non-empty comment of at most 4,000 characters.')
   const tab = requireTab(target)
-  const ref = requestedReference(tab, request.targetUrl)
+  const ref = request.page
   const page = await fetchPublishedPage(tab, ref, publishedPage, 'version', signal)
   const link = pageLink(tab.instance, page)
   const parent = request.parentId ? await readComment(tab, request.parentId, page.id, signal) : undefined
-  if (parent && location(parent) !== 'footer') refuse('Replies can only be added to a verified footer comment.')
+  if (parent && location(parent) !== 'footer') throw new Error('Replies can only be added to a footer comment.')
   const destination = `"${page.title}" (${link.url})`
   const heading = parent
     ? `Reply to comment ${parent.id} on ${destination}.\nParent: ${summary(link.url, parent).text}\n`

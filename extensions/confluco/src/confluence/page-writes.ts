@@ -18,7 +18,6 @@ export const title = z
   .min(1)
   .max(255)
   .regex(/^[^\p{C}]+$/u)
-export const pageTitleArgs = z.strictObject({ title: title.describe('The exact new title from the user request.') })
 const pageLocation = publishedPage.extend({ space: z.object({ key: z.string().min(1).max(255) }) })
 const pageVersion = pageLocation.extend({ version: z.object({ number: z.int().min(1).max(2_147_483_647) }) })
 export const storedPage = pageVersion.extend({
@@ -28,53 +27,19 @@ export const storedPage = pageVersion.extend({
 export const storedFields = 'space,ancestors,version,body.storage'
 
 export type PageWriteRequest =
-  | { action: 'create'; title: string; targetUrl?: string; spaceKey?: string; text: string }
-  | { action: 'rename'; title: string; targetUrl?: string }
-
-const createEnglish =
-  /^(?:please\s+)?create\s+(?:a\s+)?(?:published\s+)?(?:child\s+)?page\s+(?:(?:called|named|titled)\s+)?(?<title>"[^"\r\n]+"|“[^”\r\n]+”|`[^`\r\n]+`)(?:\s+in\s+space\s+(?<space>"[^"]+"|[^\s]+))?\s+under\s+(?:this\s+page|(?<target>https?:\/\/[^\s]+?))(?:\s+with\s+text\s+(?<text>"[^"]*"|“[^”]*”|`[^`]*`))?[.!]?$/iu
-const renameEnglish =
-  /^(?:please\s+)?rename\s+(?:this\s+page|(?:page\s+)?(?<target>https?:\/\/[^\s]+))\s+to\s+(?<title>"[^"\r\n]+"|“[^”\r\n]+”|`[^`\r\n]+`)[.!]?$/iu
-const createChinese =
-  /^(?:请\s*)?在(?:当前(?:的)?页面?|本页|这(?:个)?页面?)下\s*创建(?:一个)?(?:子)?页面\s*(?<title>"[^"\r\n]+"|“[^”\r\n]+”|`[^`\r\n]+`)(?:\s*[，,]?\s*(?:正文|内容)(?:是|为)?\s*[：:]?\s*(?<text>"[^"]*"|“[^”]*”|`[^`]*`))?[。！!]?$/u
-const renameChinese =
-  /^(?:请\s*)?(?:把|将)?(?:当前(?:的)?页面?|本页|这(?:个)?页面?)\s*(?:重命名为|改名为|改成)\s*(?<title>"[^"\r\n]+"|“[^”\r\n]+”|`[^`\r\n]+`)[。！!]?$/u
-
-const editEnglish =
-  /^(?:please\s+)?replace\s+(?<before>"[^"\r\n]+"|“[^”\r\n]+”|`[^`\r\n]+`)\s+with\s+(?<after>"[^"\r\n]*"|“[^”\r\n]*”|`[^`\r\n]*`)\s+on\s+(?:this\s+page|(?<target>https?:\/\/[^\s]+?))[.!]?$/iu
-const editChinese =
-  /^(?:请\s*)?在(?:当前(?:的)?页面?|本页|这(?:个)?页面?)(?:上)?\s*(?:把|将)\s*(?<before>"[^"\r\n]+"|“[^”\r\n]+”|`[^`\r\n]+`)\s*(?:替换为|改为|改成)\s*(?<after>"[^"\r\n]*"|“[^”\r\n]*”|`[^`\r\n]*`)[。！!]?$/u
+  | { action: 'create'; title: string; parent?: PageReference; text: string }
+  | { action: 'rename'; title: string; page?: PageReference }
 
 export interface PageEditRequest {
   before: string
   after: string
-  targetUrl?: string
+  page?: PageReference
 }
 
-export function requestedPageEdit(message: string): PageEditRequest | undefined {
-  const text = message.trim()
-  const match = (editEnglish.exec(text) ?? editChinese.exec(text))?.groups
-  if (!match) return undefined
-  return { before: match.before.slice(1, -1), after: match.after.slice(1, -1), targetUrl: match.target }
-}
-
-export function requestedPageWrite(message: string): PageWriteRequest | undefined {
-  const text = message.trim()
-  const creation = (createEnglish.exec(text) ?? createChinese.exec(text))?.groups
-  const rename = (renameEnglish.exec(text) ?? renameChinese.exec(text))?.groups
-  const match = creation ?? rename
-  const name = title.safeParse(match?.title?.slice(1, -1))
-  if (!name.success || !match) return undefined
-  const targetUrl = match.target
-  if (!creation) return { action: 'rename', title: name.data, targetUrl }
-  const spaceKey = match.space?.startsWith('"') ? match.space.slice(1, -1) : match.space
-  return { action: 'create', title: name.data, targetUrl, spaceKey, text: match.text?.slice(1, -1) ?? '' }
-}
-
-export function requestedReference(tab: ConfluenceTab, target: string | undefined): PageReference | undefined {
-  if (!target) return undefined
-  const url = URL.parse(target)
-  if (!url) refuse('Use a published page link from the same Confluence instance as the current tab.')
+/** The page a link on the tab's Confluence site names, if it names one there. */
+export function linkedPage(tab: ConfluenceTab, link: string): PageReference | undefined {
+  const url = URL.parse(link)
+  if (!url) return undefined
   const { origin, path } = tab.instance
   const at = url.pathname.slice(path.length)
   const ids = url.searchParams.getAll('pageId')
@@ -84,7 +49,7 @@ export function requestedReference(tab: ConfluenceTab, target: string | undefine
       : /^\/spaces\/[^/]+\/pages\/(\d{1,20})(?:\/[^/]+)?\/?$/.exec(at)?.[1]
   const ref = pageReference.safeParse({ instance: origin + path, id })
   if (!ref.success || url.origin !== origin || url.username || url.password || !url.pathname.startsWith(path + '/'))
-    refuse('Use a published page link from the same Confluence instance as the current tab.')
+    return undefined
   return ref.data
 }
 
@@ -109,17 +74,14 @@ export async function preparePageWrite(
   current: ConfluenceTab | undefined,
   signal?: AbortSignal,
 ): Promise<PreparedCreate | PreparedRename> {
-  if (request.action === 'create' && request.text.length > 40_000)
-    refuse('Shorten the requested page body to 40,000 characters or fewer.')
   const tab = requireTab(current)
-  const ref = requestedReference(tab, request.targetUrl)
   if (request.action === 'rename') {
+    const ref = request.page
     const target = await fetchPublishedPage(tab, ref, storedPage, storedFields, signal)
     return { action: 'rename', tab, ref, request, target }
   }
+  const ref = request.parent
   const target = await fetchPublishedPage(tab, ref, pageLocation, 'space', signal)
-  if (request.spaceKey && request.spaceKey !== target.space.key)
-    refuse('The chosen parent is not in the requested Confluence space.')
   return { action: 'create', tab, ref, request, target }
 }
 
@@ -181,21 +143,13 @@ export async function readWrittenPage(tab: ConfluenceTab, id: string, signal?: A
   }
 }
 
-export function requireEditPassages(before: string, after: string) {
-  if (!before.trim() || before.length > 2000 || after.length > 2000 || /\p{Cc}/u.test(before + after))
-    refuse('Quote a non-empty passage and a replacement of at most 2,000 characters each, on one line.')
-  if (before === after) refuse('The replacement is the same as the original text.')
-}
-
 export async function preparePageEdit(
   request: PageEditRequest,
   current: ConfluenceTab | undefined,
   signal?: AbortSignal,
 ) {
-  const { before, after, targetUrl } = request
-  requireEditPassages(before, after)
+  const { before, after, page: ref } = request
   const tab = requireTab(current)
-  const ref = requestedReference(tab, targetUrl)
   const original = await fetchPublishedPage(tab, ref, storedPage, storedFields, signal)
   const value = replaceStorageText(original.body.storage.value, before, after)
   return { tab, ref, original, value, preview: describeEdit('Edit', tab, original, before, after) }

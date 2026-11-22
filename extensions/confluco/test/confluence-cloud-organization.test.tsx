@@ -109,13 +109,18 @@ it.each(['move', 'copy', 'restriction', 'changed', 'receipt', 'attachment', 'cyc
         update: noAccessRestriction,
       })
     }
-    const tool = { name: copy ? 'copy_page' : 'move_page', arguments: '{}' }
+    const parent = wiki + destination._links.webui
+    const tool = copy
+      ? { name: 'copy_page', arguments: JSON.stringify({ parent, title: duplicate.title }) }
+      : { name: 'move_page', arguments: JSON.stringify({ parent }) }
     browser.ai.script.push(
       { toolCalls: operation === 'receipt' ? [tool, tool] : [tool] },
       { reply: 'Organization checked.' },
     )
-    const link = wiki + destination._links.webui
-    await ask(user, copy ? `Copy this page under ${link} as "Copy fixture"` : `Move this page under ${link}`)
+    await ask(
+      user,
+      copy ? 'Make a copy of this page under the destination page' : 'File this page under the destination',
+    )
     await screen.findByRole('button', { name: 'Send' })
     if (operation === 'move' || operation === 'copy') {
       expect(writes(browser)).toHaveLength(1)
@@ -128,15 +133,20 @@ it.each(['move', 'copy', 'restriction', 'changed', 'receipt', 'attachment', 'cyc
       expect(screen.getAllByText(/could not be verified/).length).toBeGreaterThan(0)
       expect(writes(browser)).toHaveLength(1)
       expect(browser.workspaceRequests.at(-1)?.init?.method).toBe('PUT')
+    } else if (operation === 'changed' || operation === 'folder') {
+      const reason = operation === 'changed' ? /changed after the preview/ : /complete page-only hierarchy/
+      expect(screen.getAllByText(reason).length).toBeGreaterThan(0)
+      expect(screen.queryByText('Organization checked.')).not.toBeInTheDocument()
+      expect(writes(browser)).toEqual([])
     } else {
-      const messages = {
+      // A choice the model can change: the reason goes back to it, and the question goes on.
+      const reasons = {
         restriction: /could drop an existing page restriction/,
-        changed: /changed after the preview/,
         attachment: /page has attachments/,
         cycle: /under itself or its descendants/,
-        folder: /complete page-only hierarchy/,
       }
-      expect(screen.getAllByText(messages[operation]).length).toBeGreaterThan(0)
+      expect(screen.getByText('Organization checked.')).toBeVisible()
+      expect(results(browser)).toMatch(reasons[operation])
       expect(writes(browser)).toEqual([])
     }
   },
@@ -189,7 +199,9 @@ it.each(['allowed', 'declined', 'children', 'unverified'])(
     if (outcome === 'allowed') expect(results(browser)).toContain('"status":"trashed"')
     if (outcome === 'unverified')
       expect(screen.getAllByText(/Check the space trash before asking again/).length).toBeGreaterThan(0)
-    if (outcome === 'children')
-      expect(screen.getAllByText(/confirm that this page has no children/).length).toBeGreaterThan(0)
+    if (outcome === 'children') {
+      expect(screen.getByText('Trash state checked.')).toBeVisible()
+      expect(results(browser)).toMatch(/has child items/)
+    }
   },
 )

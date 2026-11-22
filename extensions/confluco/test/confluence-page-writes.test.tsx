@@ -22,8 +22,8 @@ const parent = {
   body: { storage: storage(originalBody) },
 }
 const child = { ...parent, id: '99', title: 'Child fixture', ancestors: [{ id: '20' }, { id: '42' }] }
-const command = 'Create page "Child fixture" under this page'
-const rename = 'Rename this page to "Renamed fixture"'
+const command = 'Add a child page for the meeting notes'
+const rename = 'Give this page a clearer title'
 const createCall = { name: 'create_page', arguments: JSON.stringify({ title: child.title }) }
 const renameCall = { name: 'rename_page', arguments: JSON.stringify({ title: 'Renamed fixture' }) }
 
@@ -53,16 +53,14 @@ const modelResults = (browser: WorkspaceBrowser) =>
     .map(({ content }) => content)
     .join('\n')
 
-describe('trash and restore a published page', () => {
+describe('move a published page to the trash', () => {
   const trash = { name: 'trash_page', arguments: '{}' }
-  const restore = { name: 'restore_page', arguments: '{}' }
   const trashed = { ...parent, status: 'trashed', ancestors: [] }
-  const restored = { ...parent, ancestors: [] }
   const empty = { results: [] }
   const unrestricted = { restrictions: { user: empty, group: empty } }
-  const restoreCommand = 'Restore page ' + pageUrl(parent.id)
-  const usePage = (browser: WorkspaceBrowser, initial = parent) => {
-    let page: typeof parent & { metadata?: { trashdate: string } } = initial
+  const question = 'This page is obsolete, please remove it'
+  const usePage = (browser: WorkspaceBrowser) => {
+    let page: typeof parent & { metadata?: { trashdate: string } } = parent
     browser.confluenceResponse = (url, init) => {
       const endpoint = new URL(url)
       if (endpoint.pathname.endsWith('/child/page')) return Response.json(empty)
@@ -76,13 +74,7 @@ describe('trash and restore a published page', () => {
         page = { ...trashed, metadata: { trashdate: '2026-01-01T00:00:00.000Z' } }
         return new Response(null, { status: 204 })
       }
-      if (init?.method === 'PUT') {
-        expect(screen.getByText(/Restore "Parent fixture".*from the trash/)).toBeVisible()
-        expect(screen.queryByRole('img', { name: 'Waiting for your OK' })).not.toBeInTheDocument()
-        expect(endpoint.search).toBe('?status=trashed')
-        expect(init.body).toBe(JSON.stringify({ id: '42', status: 'current', version: { number: 3 } }))
-        page = restored
-      } else expect(endpoint.searchParams.get('status')).toBe('any')
+      expect(endpoint.searchParams.get('status')).toBe('any')
       return Response.json(page)
     }
   }
@@ -91,7 +83,7 @@ describe('trash and restore a published page', () => {
     const { browser, user } = await openPanel()
     usePage(browser)
     browser.ai.script.push({ toolCalls: [trash] }, { reply: 'Trashed and verified.' })
-    await ask(user, 'Trash this page')
+    await ask(user, question)
     expect(await screen.findByText(/may move child pages that your account cannot see/)).toBeVisible()
     expect(writes(browser)).toEqual([])
     await user.click(await screen.findByRole('button', { name: /^Allow$/ }))
@@ -101,50 +93,26 @@ describe('trash and restore a published page', () => {
     expect(browser.workspaceRequests.at(-1)?.init?.method).toBe('GET')
   })
 
-  it('[UC-CONFLUCO-CONFLUENCE-012-S02] restores the same page by its link once the user allows it', async () => {
+  it('[UC-CONFLUCO-CONFLUENCE-012-S03] leaves the page published when the user denies the card', async () => {
     const { browser, user } = await openPanel()
-    usePage(browser, trashed)
-    browser.ai.script.push({ toolCalls: [restore] }, { reply: 'The same page is published again.' })
-    await ask(user, restoreCommand)
-    await user.click(await screen.findByRole('button', { name: /^Allow$/ }))
-    expect(await screen.findByText('The same page is published again.')).toBeVisible()
-    expect(writes(browser)).toHaveLength(1)
-    expect(modelResults(browser)).toContain('"status":"current","version":2,"changed":true,"atSpaceRoot":true')
-    expect(browser.workspaceRequests.at(-1)?.init?.method).toBe('GET')
-  })
-
-  it('[UC-CONFLUCO-CONFLUENCE-012-S03] leaves a page trashed if the user declines restoration by link', async () => {
-    const { browser, user } = await openPanel()
-    usePage(browser, trashed)
-    browser.ai.script.push({ toolCalls: [restore] }, { reply: 'The page is still in the trash.' })
-    await ask(user, restoreCommand)
-    expect(await screen.findByText(/Review who can access the page there/)).toBeVisible()
-    expect(writes(browser)).toEqual([])
+    usePage(browser)
+    browser.ai.script.push({ toolCalls: [trash] }, { reply: 'The page is still published.' })
+    await ask(user, question)
     await user.click(await screen.findByRole('button', { name: /^Deny$/ }))
-    expect(await screen.findByText('The page is still in the trash.')).toBeVisible()
+    expect(await screen.findByText('The page is still published.')).toBeVisible()
     expect(writes(browser)).toEqual([])
   })
 
   it.each([
-    ['Trash this page', trash, trashed, false, false, /"changed":false/],
-    [restoreCommand, restore, parent, false, false, /"changed":false/],
-    ['Trash this page', trash, { ...parent, ancestors: [] }, false, false, /top-level pages/],
-    ['Trash this page', trash, parent, true, false, /child pages/],
-    ['Trash this page', trash, parent, false, false, /could lose an access restriction/],
-    ['Trash this page', trash, parent, false, true, /permission/i],
-    ['Trash this page', trash, { ...parent, id: '99' }, false, false, /expected published or trashed page/],
-    [
-      'Restore page https://other.example.test/pages/viewpage.action?pageId=42',
-      restore,
-      trashed,
-      false,
-      false,
-      /same|connected/i,
-    ],
-    ['Permanently delete this page', trash, parent, false, false, /specify the page to trash/],
+    ['already trashed', trashed, false, false, /"changed":false/],
+    ['top-level', { ...parent, ancestors: [] }, false, false, /top-level pages/],
+    ['with child pages', parent, true, false, /child pages/],
+    ['restricted', parent, false, false, /could lose an access restriction/],
+    ['denied', parent, false, true, /permission/i],
+    ['unexpected', { ...parent, id: '99' }, false, false, /expected published or trashed page/],
   ])(
-    '[UC-CONFLUCO-CONFLUENCE-012-S03] does not change the wrong or ineligible page (%s, %j)',
-    async (message, call, page, hasChildren, denied, reason) => {
+    '[UC-CONFLUCO-CONFLUENCE-012-S03] does not change an ineligible page (%s)',
+    async (kind, page, hasChildren, denied, reason) => {
       const { browser, user } = await openPanel()
       browser.confluenceResponse = (url, init) => {
         if (init?.method === 'DELETE' && denied) return new Response(null, { status: 403 })
@@ -152,85 +120,75 @@ describe('trash and restore a published page', () => {
           return Response.json({ results: hasChildren ? [{ id: '99' }] : [] })
         if (new URL(url).pathname.endsWith('/restriction/byOperation'))
           return Response.json({
-            read: {
-              restrictions: {
-                user: { results: !denied && reason.source.includes('access restriction') ? [{}] : [] },
-                group: empty,
-              },
-            },
+            read: { restrictions: { user: { results: kind === 'restricted' ? [{}] : [] }, group: empty } },
             update: unrestricted,
           })
         return Response.json(page)
       }
-      browser.ai.script.push({ toolCalls: [call] }, { reply: 'The page already has the requested state.' })
-      await ask(user, message)
+      browser.ai.script.push({ toolCalls: [trash] }, { reply: 'The page was left as it is.' })
+      await ask(user, question)
       if (denied) await user.click(await screen.findByRole('button', { name: /^Allow$/ }))
       await answered()
-      if ((page.status === 'trashed' && call === trash) || (page.status === 'current' && message === restoreCommand)) {
+      // Denied and unexpected responses stop the question; the others go back to the model.
+      if (denied || kind === 'unexpected') expect(screen.getAllByText(reason).length).toBeGreaterThan(0)
+      else {
+        expect(screen.getByText('The page was left as it is.')).toBeVisible()
         expect(modelResults(browser)).toMatch(reason)
-      } else expect(screen.getAllByText(reason).length).toBeGreaterThan(0)
+      }
       expect(writes(browser)).toHaveLength(denied ? 1 : 0)
     },
   )
 
-  it.each([false, true])(
-    '[UC-CONFLUCO-CONFLUENCE-012-S04] reports a rate-limited state verification (restoring %s)',
-    async (restoring) => {
-      const { browser, user } = await openPanel()
-      let written = false
-      let verificationReads = 0
-      browser.confluenceResponse = (url, init) => {
-        if (init?.method === 'DELETE' || init?.method === 'PUT') {
-          written = true
-          return new Response(null, { status: 204 })
-        }
-        if (written) {
-          verificationReads++
-          return new Response(null, { status: 429 })
-        }
-        if (new URL(url).pathname.endsWith('/child/page')) return Response.json(empty)
-        if (new URL(url).pathname.endsWith('/restriction/byOperation'))
-          return Response.json({ read: unrestricted, update: unrestricted })
-        return Response.json(restoring ? trashed : parent)
+  it('[UC-CONFLUCO-CONFLUENCE-012-S04] reports a rate-limited state verification', async () => {
+    const { browser, user } = await openPanel()
+    let written = false
+    let verificationReads = 0
+    browser.confluenceResponse = (url, init) => {
+      if (init?.method === 'DELETE') {
+        written = true
+        return new Response(null, { status: 204 })
       }
-      const call = restoring ? restore : trash
-      browser.ai.script.push({ toolCalls: [call, call] })
-      await ask(user, restoring ? restoreCommand : 'Trash this page')
-      await user.click(await screen.findByRole('button', { name: /^Allow$/ }))
-      await answered()
-      expect(screen.getAllByText(/page state may have changed.*rate-limited/).length).toBeGreaterThan(0)
-      expect(writes(browser)).toHaveLength(1)
-      expect(verificationReads).toBe(1)
-    },
-  )
+      if (written) {
+        verificationReads++
+        return new Response(null, { status: 429 })
+      }
+      if (new URL(url).pathname.endsWith('/child/page')) return Response.json(empty)
+      if (new URL(url).pathname.endsWith('/restriction/byOperation'))
+        return Response.json({ read: unrestricted, update: unrestricted })
+      return Response.json(parent)
+    }
+    browser.ai.script.push({ toolCalls: [trash, trash] })
+    await ask(user, question)
+    await user.click(await screen.findByRole('button', { name: /^Allow$/ }))
+    await answered()
+    expect(screen.getAllByText(/page state may have changed.*rate-limited/).length).toBeGreaterThan(0)
+    expect(writes(browser)).toHaveLength(1)
+    expect(verificationReads).toBe(1)
+  })
 
-  it.each([false, true])(
-    '[UC-CONFLUCO-CONFLUENCE-012-S04] verifies uncertainty once (restoring %s)',
-    async (restoring) => {
-      const { browser, user } = await openPanel()
-      let readsAfterWrite = 0
-      let attempted = false
-      browser.confluenceResponse = (url, init) => {
-        if (init?.method === 'DELETE' || init?.method === 'PUT') {
-          attempted = true
-          return new Response(null, { status: 503 })
-        }
-        if (attempted) readsAfterWrite++
-        if (new URL(url).pathname.endsWith('/child/page')) return Response.json(empty)
-        if (new URL(url).pathname.endsWith('/restriction/byOperation'))
-          return Response.json({ read: unrestricted, update: unrestricted })
-        return Response.json(restoring ? trashed : parent)
+  it('[UC-CONFLUCO-CONFLUENCE-012-S04] verifies uncertainty once', async () => {
+    const { browser, user } = await openPanel()
+    let readsAfterWrite = 0
+    let attempted = false
+    browser.confluenceResponse = (url, init) => {
+      if (init?.method === 'DELETE') {
+        attempted = true
+        return new Response(null, { status: 503 })
       }
-      const call = restoring ? restore : trash
-      browser.ai.script.push({ toolCalls: [call, call] })
-      await ask(user, restoring ? restoreCommand : 'Trash this page')
-      await user.click(await screen.findByRole('button', { name: /^Allow$/ }))
-      await answered()
-      expect(writes(browser)).toHaveLength(1)
-      expect(readsAfterWrite).toBe(1)
-      expect(screen.getAllByText(/page state may have changed/).length).toBeGreaterThan(0)
-    },
-  )
+      if (attempted) readsAfterWrite++
+      if (new URL(url).pathname.endsWith('/child/page')) return Response.json(empty)
+      if (new URL(url).pathname.endsWith('/restriction/byOperation'))
+        return Response.json({ read: unrestricted, update: unrestricted })
+      return Response.json(parent)
+    }
+    browser.ai.script.push({ toolCalls: [trash, trash] })
+    await ask(user, question)
+    await user.click(await screen.findByRole('button', { name: /^Allow$/ }))
+    await answered()
+    expect(writes(browser)).toHaveLength(1)
+    expect(readsAfterWrite).toBe(1)
+    expect(screen.getAllByText(/page state may have changed/).length).toBeGreaterThan(0)
+  })
 })
 
 describe('create a published page', () => {
@@ -250,8 +208,12 @@ describe('create a published page', () => {
       if (endpoint.pathname === `${contentPath}/99`) return Response.json(created)
       return Response.json(parent)
     }
-    browser.ai.script.push({ toolCalls: [createCall] }, { reply: 'Child created and verified.' })
-    await ask(user, `Create page "Child fixture" in space TEST under ${pageUrl('42')} with text "Literal <tag> & text"`)
+    const call = {
+      name: 'create_page',
+      arguments: JSON.stringify({ title: child.title, text: 'Literal <tag> & text', parent: pageUrl('42') }),
+    }
+    browser.ai.script.push({ toolCalls: [call] }, { reply: 'Child created and verified.' })
+    await ask(user, command)
     expect(await screen.findByText(preview)).toBeVisible()
     expect(screen.queryByRole('img', { name: 'Waiting for your OK' })).not.toBeInTheDocument()
     expect(writes(browser)).toHaveLength(1)
@@ -275,13 +237,30 @@ describe('create a published page', () => {
     expect(modelResults(browser)).toContain('"version":1,"changed":true,"bodyVerified":true')
   })
 
-  it.each([
-    '请在当前页面下创建页面“Child fixture”',
-    `Create page "Child fixture" under ${pageUrl('42')}.`,
-    'Create page "Child fixture" under ' + base + '/spaces/TEST/pages/42/Parent+fixture',
-  ])(
-    '[UC-CONFLUCO-CONFLUENCE-007-S02] reports an existing title without creating another page for %s',
-    async (message) => {
+  it('[@no-uc:wiring] lets a later call in the question name the page a write returned', async () => {
+    const { browser, user } = await openPanel()
+    const created = { ...child, body: { storage: storage('') }, version: { number: 1 } }
+    browser.confluenceResponse = (url, init) => {
+      const endpoint = new URL(url)
+      if (init?.method === 'POST' || endpoint.pathname === `${contentPath}/99`) return Response.json(created)
+      if (endpoint.pathname === contentPath) return Response.json({ results: [] })
+      if (endpoint.pathname === `${contentPath}/99/label`) return Response.json({ results: [] })
+      return Response.json(parent)
+    }
+    browser.ai.script.push(
+      { toolCalls: [createCall] },
+      { toolCalls: [{ name: 'list_page_labels', arguments: JSON.stringify({ page: { instance: base, id: '99' } }) }] },
+      { reply: 'The new page has no labels.' },
+    )
+    await ask(user, command)
+    expect(await screen.findByText('The new page has no labels.')).toBeVisible()
+    expect(modelResults(browser)).not.toContain('Use a page reference returned by a Confluence tool')
+    expect(browser.workspaceRequests.at(-1)?.url).toContain(`${contentPath}/99/label`)
+  })
+
+  it.each([undefined, pageUrl('42'), base + '/spaces/TEST/pages/42/Parent+fixture'])(
+    '[UC-CONFLUCO-CONFLUENCE-007-S02] reports an existing title without creating another page (parent %s)',
+    async (parentLink) => {
       const { browser, user } = await openPanel()
       browser.confluenceResponse = (url) => {
         const endpoint = new URL(url)
@@ -290,8 +269,9 @@ describe('create a published page', () => {
         expect(endpoint.searchParams.get('spaceKey')).toBe(parent.space.key)
         return Response.json({ results: [child] })
       }
-      browser.ai.script.push({ toolCalls: [createCall] }, { reply: 'The page already exists.' })
-      await ask(user, message)
+      const call = { name: 'create_page', arguments: JSON.stringify({ title: child.title, parent: parentLink }) }
+      browser.ai.script.push({ toolCalls: [call] }, { reply: 'The page already exists.' })
+      await ask(user, command)
       expect(await screen.findByText('The page already exists.')).toBeVisible()
       expect(modelResults(browser)).toContain('"changed":false,"alreadyExists":true')
       expect(modelResults(browser)).toContain(pageUrl('99'))
@@ -353,49 +333,19 @@ describe('create a published page', () => {
     }
   })
 
-  it.each([
-    ['Summarize this page', createCall, false],
-    ['Create page "Child fixture" in space TEST', createCall, false],
-    ['创建页面“Child fixture”', createCall, false],
-    [command, { ...createCall, arguments: '{"title":"Forged title"}' }, false],
-    [
-      'Create page "Child fixture" under https://other.example.test/kb/pages/viewpage.action?pageId=42',
-      createCall,
-      true,
-    ],
-  ])(
-    '[UC-CONFLUCO-CONFLUENCE-007-S04] refuses an unauthorized creation from %s',
-    async (message, call, stopsQuestion) => {
-      const { browser, user } = await openPanel()
-      browser.ai.script.push({ toolCalls: [call] }, { reply: 'No page created.' })
-      await ask(user, message)
-      await answered()
-      if (stopsQuestion) expect(screen.getAllByText(/Use a published page link/).length).toBeGreaterThan(0)
-      else expect(modelResults(browser)).toContain('Only the user can request this page change.')
-      expect(browser.workspaceRequests).toEqual([])
-    },
-  )
-
-  it('[@no-uc:data] refuses creation when the parent is outside the requested space', async () => {
+  it('[@no-uc:access] refuses a parent link on another site without sending a request', async () => {
     const { browser, user } = await openPanel()
-    browser.confluenceResponse = () => Response.json(parent)
-    browser.ai.script.push({ toolCalls: [createCall] })
-    await ask(user, 'Create page "Child fixture" in space OTHER under this page')
-    await answered()
-    expect(screen.getAllByText(/chosen parent is not in the requested Confluence space/).length).toBeGreaterThan(0)
-    expect(writes(browser)).toEqual([])
-  })
-
-  it('[@no-uc:data] explains when the requested body exceeds the creation limit', async () => {
-    const { browser, user } = await openPanel()
-    browser.ai.script.push({ toolCalls: [createCall] })
-    await user.click(screen.getByRole('textbox', { name: 'Message' }))
-    await user.paste(`${command} with text "${'x'.repeat(40_001)}"`)
-    await user.click(screen.getByRole('button', { name: 'Send' }))
-    await answered()
-    expect(screen.getAllByText(/Shorten the requested page body to 40,000 characters or fewer/).length).toBeGreaterThan(
-      0,
-    )
+    const call = {
+      name: 'create_page',
+      arguments: JSON.stringify({
+        title: child.title,
+        parent: 'https://other.example.test/kb/pages/viewpage.action?pageId=42',
+      }),
+    }
+    browser.ai.script.push({ toolCalls: [call] }, { reply: 'No page created.' })
+    await ask(user, command)
+    expect(await screen.findByText('No page created.')).toBeVisible()
+    expect(modelResults(browser)).toContain('find the page with search_pages and pass its reference')
     expect(browser.workspaceRequests).toEqual([])
   })
 })
@@ -414,8 +364,8 @@ describe('rename a published page', () => {
       }
       return Response.json(applied ? updated : parent)
     }
-    browser.ai.script.push({ toolCalls: [renameCall, renameCall] }, { reply: 'Renamed the existing page.' })
-    await ask(user, '把当前页重命名为“Renamed fixture”')
+    browser.ai.script.push({ toolCalls: [renameCall] }, { reply: 'Renamed the existing page.' })
+    await ask(user, '给当前页换一个更清楚的标题')
     expect(
       await screen.findByText(
         `Rename "Parent fixture" (${pageUrl('42')}) in space TEST on ${base} to "Renamed fixture".`,
@@ -502,8 +452,12 @@ describe('rename a published page', () => {
 })
 
 describe('edit published page text', () => {
-  const edit = 'Replace "Status A & B" with `QA\'s "ready" <today>` on this page'
-  const editCall = { name: 'edit_page', arguments: '{}' }
+  const edit = 'Update the status line: QA says it is ready today'
+  const editWith = (before: string, after: string) => ({
+    name: 'edit_page',
+    arguments: JSON.stringify({ before, after }),
+  })
+  const editCall = editWith('Status A & B', `QA's "ready" <today>`)
   const preserved =
     '<ac:structured-macro ac:name="info"><ac:parameter ac:name="title">Status A &amp; B</ac:parameter>' +
     '<ac:rich-text-body><p>Keep me</p></ac:rich-text-body></ac:structured-macro>' +
@@ -543,33 +497,22 @@ describe('edit published page text', () => {
   })
 
   it.each([
-    [edit, body + '<p>Status A &amp; B</p>', /appears more than once/],
-    [edit, '<p>Status <em>A &amp; B</em></p>', /not found in one editable text segment/],
-    ['Replace "incomplete" with "complete" on this page', tasks, /not found in one editable text segment/],
-    ['Summarize this page', body, /Ask the user to say Replace/],
+    ['twice', editCall, body + '<p>Status A &amp; B</p>', /appears more than once/],
+    ['split by formatting', editCall, '<p>Status <em>A &amp; B</em></p>', /not in one editable text segment/],
+    ['in task metadata', editWith('incomplete', 'complete'), tasks, /not in one editable text segment/],
+    ['reserved markup', editWith('OLD', ']]'), '<p>OLD> suffix</p>', /reserved markup sequence/],
   ])(
-    '[UC-CONFLUCO-CONFLUENCE-009-S02] refuses unapproved or ambiguous edits from %s',
-    async (message, value, reason) => {
+    '[UC-CONFLUCO-CONFLUENCE-009-S02] leaves the page unchanged and tells the model why (%s)',
+    async (_case, call, value, reason) => {
       const { browser, user } = await openPanel()
       browser.confluenceResponse = () => Response.json({ ...original, body: { storage: storage(value) } })
-      browser.ai.script.push({ toolCalls: [editCall] })
-      await ask(user, message)
-      await answered()
-      expect(screen.getAllByText(reason).length).toBeGreaterThan(0)
-      expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument()
+      browser.ai.script.push({ toolCalls: [call] }, { reply: 'I need to quote one current passage.' })
+      await ask(user, edit)
+      expect(await screen.findByText('I need to quote one current passage.')).toBeVisible()
+      expect(modelResults(browser)).toMatch(reason)
       expect(writes(browser)).toEqual([])
     },
   )
-
-  it('[@no-uc:data] refuses a replacement that would create a reserved storage sequence', async () => {
-    const { browser, user } = await openPanel()
-    browser.confluenceResponse = () => Response.json({ ...original, body: { storage: storage('<p>OLD> suffix</p>') } })
-    browser.ai.script.push({ toolCalls: [editCall] })
-    await ask(user, 'Replace "OLD" with "]]" on this page')
-    await answered()
-    expect(writes(browser)).toEqual([])
-    expect(screen.getAllByText(/reserved markup sequence/).length).toBeGreaterThan(0)
-  })
 
   it.each([false, true])(
     '[UC-CONFLUCO-CONFLUENCE-009-S03] protects newer content (server conflict %s)',
