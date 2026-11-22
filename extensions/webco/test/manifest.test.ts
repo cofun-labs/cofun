@@ -172,7 +172,7 @@ describe('extension manifest', () => {
     expect(manifest({ ...env, CRX_PUBLIC_KEY: 'public-key' })).toMatchObject({ key: 'public-key', version: '1.2.3' })
   })
 
-  it('[@no-uc:access] builds Webco under the ID Clerk and the worker allow', () => {
+  it('[@no-uc:access] builds Webco under its Chrome Web Store ID', () => {
     const { CRX_PUBLIC_KEY } = hostedEnv()
     expect(CRX_PUBLIC_KEY).toBeTruthy()
     const id = createHash('sha256')
@@ -180,7 +180,7 @@ describe('extension manifest', () => {
       .digest('hex')
       .slice(0, 32)
       .replace(/[0-9a-f]/g, (digit) => String.fromCharCode(97 + Number.parseInt(digit, 16)))
-    expect(id).toBe('lfdnapbmoeabbmmfghiajdneabdblckk')
+    expect(id).toBe('ohopjjnpfepkmkcfccaondkhggegbfeh')
   })
 
   // The Chrome Web Store signs the item with its own key, which sets the ID, so the zip uploaded
