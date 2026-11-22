@@ -437,6 +437,17 @@ describe('reading the page in the current tab', () => {
     expect(browser.tab.accessRequests).toEqual([])
     expect(browser.tab.injections).toEqual([])
     expect(browser.ai.calls).toHaveLength(2)
+
+    // The chat left ended there: reopened, it shows the call as stopped, with no card.
+    await answered()
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
+    await user.click(
+      await within(screen.getByRole('dialog', { name: 'Chats' })).findByRole('button', {
+        name: /^Summarize this article/,
+      }),
+    )
+    expect(await screen.findByText('Stopped: read the current tab')).toBeVisible()
+    expect(screen.queryByRole('group', { name: /Allow Webco to read/ })).toBeNull()
   })
 
   it('[UC-WEBCO-PANEL-001-S12] a tab the user leaves while asked is not read', async () => {
