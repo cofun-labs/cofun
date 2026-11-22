@@ -126,10 +126,14 @@ describe('continuing a long chat', () => {
 
   it('[UC-WEBCO-CHAT-007-S03] a chat too long for a smaller model chosen next is summarized in order by it, which then answers', async () => {
     const { browser, user } = await open()
-    // A reply that fits the hosted model's window, but not the 200,000 tokens of GPT-6.1 Sol.
-    browser.ai.script.push({ reply: `Archive start. ${'x'.repeat(580_000)} Archive end.` })
-    await ask(user, 'The launch code is OSPREY-73. Write out the archive.')
-    expect(await screen.findByText(/Archive end\./)).toBeVisible()
+    // A question that fits the hosted model's window, but not the 200,000 tokens of GPT-6.1 Sol: pasted
+    // text, as a user would paste a long document. (A reply this long takes the panel seconds to render.)
+    browser.ai.script.push({ reply: 'Noted.' })
+    await ask(
+      user,
+      `The launch code is OSPREY-73. Keep this archive: Archive start. ${'x'.repeat(580_000)} Archive end.`,
+    )
+    expect(await screen.findByText('Noted.')).toBeVisible()
     await answered()
     await useOwnModel(browser, user)
     browser.openRouter.ai.script.push(
