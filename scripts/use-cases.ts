@@ -59,16 +59,9 @@ const OLD_TEST_ID = /\[(UC-[A-Z]+-\d+-S\d+)\]/g
 /** The product a use case or test file belongs to, from its folder. */
 function productOf(file: string): string {
   if (file.startsWith(`${WORKER}/`)) return WORKER
-  // A package's folder name is lowercase words joined by hyphens: worker-client.
+  // A package has no ID prefix of its own (it has no use cases), so any folder name will do.
   const pkg = /^packages\/([^/]+)\//.exec(file)
-  if (pkg) {
-    if (!/^[a-z]+(-[a-z]+)*$/.test(pkg[1])) {
-      throw new Error(
-        `packages/${pkg[1]}: a package's folder name is lowercase words and hyphens only (docs/bdd.md#ids)`,
-      )
-    }
-    return `packages/${pkg[1]}`
-  }
+  if (pkg) return `packages/${pkg[1]}`
   const extension = /^extensions\/([^/]+)\//.exec(file)
   if (!extension) throw new Error(`${file} is not in an extension's folder, a package's, or the worker's`)
   // The folder name, in capitals, is the product's ID prefix, which may hold letters only.
