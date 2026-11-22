@@ -6,7 +6,7 @@ The model can summarize earlier messages to continue a long chat. You can still 
 
 Web searches and pages rendered in a browser cost credits, also when your own model answers. To search for free instead, switch on **Search with DuckDuckGo** in **Account → Settings**: each search then opens DuckDuckGo in a background tab and reads its results. Those searches show in your Chrome history, and if DuckDuckGo asks you to confirm you're a person, answer it in that tab.
 
-Get Webco at [cofun.cc/webco](https://cofun.cc/webco).
+[Install Webco from the Chrome Web Store](https://chromewebstore.google.com/detail/ohopjjnpfepkmkcfccaondkhggegbfeh).
 
 ## Try the development build
 
