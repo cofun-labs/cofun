@@ -15,6 +15,7 @@
     "@clerk/chrome-extension": "^3.1.105",
     "@cofun/agent": "workspace:*",
     "@cofun/analytics": "workspace:*",
+    "@cofun/reply": "workspace:*",
     "@cofun/tools": "workspace:*",
     "@cofun/worker-client": "workspace:*",
     "react": "^19.3.0",

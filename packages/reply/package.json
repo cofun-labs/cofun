@@ -1,0 +1,17 @@
+{
+  "name": "@cofun/reply",
+  "version": "0.0.0",
+  "private": true,
+  "description": "How the side panel may show a model's reply: the rules its Markdown renderer applies, so a reply loads nothing and opens only web links",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/hast": "^3.0.4",
+    "typescript": "^7.0.2"
+  }
+}

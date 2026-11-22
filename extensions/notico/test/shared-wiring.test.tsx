@@ -1,6 +1,7 @@
 // That Notico wires in what every Cofun extension shares: the tools of @cofun/tools, offered to the
 // model and run with Notico's name, and the "Ask Notico" menu item that hands a selection to the side
-// panel. How they behave is verified once, in Webco (extensions/webco/test/).
+// panel, and the rules a reply is shown by (@cofun/reply). How they behave is verified once, in Webco
+// (extensions/webco/test/).
 import '@testing-library/jest-dom/vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -14,7 +15,7 @@ afterEach(closeBrowser)
 const ARTICLE = 'https://news.example.com/2026/rivers'
 const PAGE = 'https://tea.example/oolong'
 
-it('[@no-uc:wiring] the shared tools are offered and run, and "Ask Notico" hands a selection to the panel', async () => {
+it('[@no-uc:wiring] the shared tools are offered and run, and "Ask Notico" hands a selection to the panel, and a reply is shown by the shared rules', async () => {
   const tab = new FakeNotionTab(ARTICLE)
   tab.title = 'Rivers | News'
   tab.dom = webPage({ title: 'Rivers | News', main: '<p>Rivers are rising.</p>', url: ARTICLE })
@@ -37,11 +38,15 @@ it('[@no-uc:wiring] the shared tools are offered and run, and "Ask Notico" hands
     call('read_current_tab', {}),
     call('read_web_page', { url: PAGE }),
     call('search_web', { query: 'oolong' }),
-    { reply: 'Done reading.' },
+    { reply: 'Done reading. ![Chart](https://img.example.com/c.png) [run](javascript:alert(1))' },
   )
   await user.type(screen.getByRole('textbox', { name: 'Message' }), 'What is this about?')
   await user.click(screen.getByRole('button', { name: 'Send' }))
-  expect(await screen.findByText('Done reading.')).toBeVisible()
+  expect(await screen.findByText(/Done reading/)).toBeVisible()
+  await screen.findByRole('button', { name: 'Send' })
+  expect(document.querySelector('[src*="img.example.com"]')).toBeNull()
+  expect(screen.getByRole('link', { name: 'Chart' })).toHaveAttribute('href', 'https://img.example.com/c.png')
+  expect(screen.queryByRole('link', { name: 'run' })).toBeNull()
 
   const offered = (browser.ai.calls[0].inputs.tools as { function: { name: string } }[]).map((t) => t.function.name)
   expect(offered).toEqual(
