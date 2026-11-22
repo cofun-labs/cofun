@@ -15,7 +15,7 @@ afterEach(closeBrowser)
 const ARTICLE = 'https://news.example.com/2026/rivers'
 const PAGE = 'https://tea.example/oolong'
 
-it('[@no-uc:wiring] the shared tools are offered and run, and "Ask Notico" hands a selection to the panel, and a reply is shown by the shared rules', async () => {
+it('[@no-uc:wiring] the shared tools are offered and run, and "Ask Notico" hands a selection to the panel, and a reply is shown by the shared rules, its HTML as text', async () => {
   const tab = new FakeNotionTab(ARTICLE)
   tab.title = 'Rivers | News'
   tab.dom = webPage({ title: 'Rivers | News', main: '<p>Rivers are rising.</p>', url: ARTICLE })
@@ -38,12 +38,18 @@ it('[@no-uc:wiring] the shared tools are offered and run, and "Ask Notico" hands
     call('read_current_tab', {}),
     call('read_web_page', { url: PAGE }),
     call('search_web', { query: 'oolong' }),
-    { reply: 'Done reading. ![Chart](https://img.example.com/c.png) [run](javascript:alert(1))' },
+    {
+      reply:
+        'Done reading. <b onclick="alert(1)">bold</b> ![Chart](https://img.example.com/c.png) [run](javascript:alert(1))',
+    },
   )
   await user.type(screen.getByRole('textbox', { name: 'Message' }), 'What is this about?')
   await user.click(screen.getByRole('button', { name: 'Send' }))
   expect(await screen.findByText(/Done reading/)).toBeVisible()
   await screen.findByRole('button', { name: 'Send' })
+  // HTML is shown as text: the view gives its renderer no HTML plugin.
+  expect(screen.getByText(/Done reading/)).toHaveTextContent('<b onclick="alert(1)">bold</b>')
+  expect(screen.getByText(/Done reading/).querySelector('b')).toBeNull()
   expect(document.querySelector('[src*="img.example.com"]')).toBeNull()
   expect(screen.getByRole('link', { name: 'Chart' })).toHaveAttribute('href', 'https://img.example.com/c.png')
   expect(screen.queryByRole('link', { name: 'run' })).toBeNull()
