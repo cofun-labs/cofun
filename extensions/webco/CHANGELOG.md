@@ -8,7 +8,7 @@ First release.
 
 ### Added
 
-- An AI side panel next to any web page: ask in plain words about the page you're on, and it reads it and answers, showing each step as it goes. It reads, and changes nothing on any site.
+- Answers from any web page, in a side panel next to it: summarize the page you're on, ask about it in plain words, and see each step as it goes. It reads, and changes nothing on any site.
 - The first time it needs a site, Webco and then Chrome ask you to allow it. It reads the page in your own tab, so it sees what the page shows you.
 - Add several open tabs to one question with @ or the + button, and compare or combine them.
 - Read a link by its address, or search the web, with the sources named. Searches and pages rendered for you cost credits, or switch on "Search with DuckDuckGo" in Settings to search for free in a background tab.

@@ -85,7 +85,7 @@ export function buildManifest(env: ManifestEnv, version: string, { store = false
     ...(store ? {} : { version_name: `${version} dev` }),
     // The store's summary line: at most 132 characters, which the manifest test pins.
     description:
-      'AI copilot for any web page: ask about the page you are on, read other pages, and search the web. No subscription needed.',
+      'AI copilot for any web page: summarize it, ask about it, compare tabs, and check it against the web. No subscription needed.',
     ...(env.CRX_PUBLIC_KEY && !store ? { key: env.CRX_PUBLIC_KEY } : {}),
     icons: ICONS,
     // contextMenus and activeTab: the "Ask Webco" item, which reads the selection in the tab it was

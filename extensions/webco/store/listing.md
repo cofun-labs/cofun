@@ -5,14 +5,14 @@
 The text between the fences goes into the Description field as it is (plain text; the store keeps line breaks and shows no Markdown).
 
 ```text
-Ask any web page anything, right next to it. Webco is an AI copilot in Chrome's side panel that reads the page you're on, the tabs you add, and the web, and answers with its sources.
+Get answers from any web page without leaving it. Webco is an AI copilot in Chrome's side panel that summarizes, explains, and compares what you're reading, across your tabs and the web, and names its sources.
 
 ⚡ Nothing to set up: open the panel on any page and ask.
 👀 It only reads: Webco changes nothing on any site, and reads a site in your tabs only after you allow it.
 🆓 Free credits every week, then pay only for what you use. No subscription.
 🔓 Open source, and our server keeps nothing you ask or read.
 
-READ ANY PAGE
+UNDERSTAND ANY PAGE
 • Summarize the article, docs page, or thread you're on, or ask what it says about something.
 • Ask about a YouTube video: Webco reads its transcript and points to the moments it cites.
 • Long pages are read in parts, so nothing gets cut off.
