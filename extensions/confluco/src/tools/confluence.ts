@@ -25,7 +25,7 @@ import type { ConfluenceContinuation, ToolMemory } from './memory'
 import { asData, clip, quote, withText } from '@cofun/tools'
 import { on, READ, SEARCH } from './shared'
 
-function remember(memory: ToolMemory, pages: readonly { ref: PageReference }[]) {
+export function remember(memory: ToolMemory, pages: readonly { ref: PageReference }[]) {
   for (const { ref } of pages) memory.confluenceResources.add(JSON.stringify([ref.instance, ref.id]))
 }
 

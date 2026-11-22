@@ -34,7 +34,7 @@ import {
   type PageReference,
 } from '../confluence/references'
 import { captureConfluenceTab, refuse, type ConfluenceTab } from '../confluence/tab'
-import { requirePage } from './confluence'
+import { remember, requirePage } from './confluence'
 import { target } from './target'
 import { defineTool } from '../tool'
 import { z } from '../zod'
@@ -43,7 +43,8 @@ import { asData } from '@cofun/tools'
 import { on, verb } from './shared'
 
 interface ChangeResult {
-  data: object
+  /** The page written, and the parent a move or copy put it under: later calls in the question may name them. */
+  data: { page: { ref: PageReference }; parent?: { ref: PageReference } }
   changed: boolean
 }
 
@@ -163,6 +164,7 @@ function change<S extends z.ZodObject>(
       await requireSameTab(tab)
       signal?.throwIfAborted()
       const result = await plan.apply(signal)
+      remember(memory, [result.data.page, ...(result.data.parent ? [result.data.parent] : [])])
       return { text: asData([JSON.stringify(result.data)]), details: {}, changed: result.changed }
     },
   })

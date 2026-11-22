@@ -237,6 +237,27 @@ describe('create a published page', () => {
     expect(modelResults(browser)).toContain('"version":1,"changed":true,"bodyVerified":true')
   })
 
+  it('[@no-uc:wiring] lets a later call in the question name the page a write returned', async () => {
+    const { browser, user } = await openPanel()
+    const created = { ...child, body: { storage: storage('') }, version: { number: 1 } }
+    browser.confluenceResponse = (url, init) => {
+      const endpoint = new URL(url)
+      if (init?.method === 'POST' || endpoint.pathname === `${contentPath}/99`) return Response.json(created)
+      if (endpoint.pathname === contentPath) return Response.json({ results: [] })
+      if (endpoint.pathname === `${contentPath}/99/label`) return Response.json({ results: [] })
+      return Response.json(parent)
+    }
+    browser.ai.script.push(
+      { toolCalls: [createCall] },
+      { toolCalls: [{ name: 'list_page_labels', arguments: JSON.stringify({ page: { instance: base, id: '99' } }) }] },
+      { reply: 'The new page has no labels.' },
+    )
+    await ask(user, command)
+    expect(await screen.findByText('The new page has no labels.')).toBeVisible()
+    expect(modelResults(browser)).not.toContain('Use a page reference returned by a Confluence tool')
+    expect(browser.workspaceRequests.at(-1)?.url).toContain(`${contentPath}/99/label`)
+  })
+
   it.each([undefined, pageUrl('42'), base + '/spaces/TEST/pages/42/Parent+fixture'])(
     '[UC-CONFLUCO-CONFLUENCE-007-S02] reports an existing title without creating another page (parent %s)',
     async (parentLink) => {
