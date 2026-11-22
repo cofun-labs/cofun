@@ -20,21 +20,14 @@ import {
   applyPageEdit,
   applyPageWrite,
   describePageWrite,
-  linkedPage,
   preparePageEdit,
   preparePageWrite,
   title,
   type PageWriteRequest,
 } from '../confluence/page-writes'
-import {
-  fetchPublishedPage,
-  pageLink,
-  pageReference,
-  publishedPage,
-  type PageReference,
-} from '../confluence/references'
+import { fetchPublishedPage, pageLink, publishedPage, type PageReference } from '../confluence/references'
 import { captureConfluenceTab, refuse, type ConfluenceTab } from '../confluence/tab'
-import { remember, requirePage } from './confluence'
+import { page, pageAt, pageTarget, remember, resolvePage } from './pages'
 import { target } from './target'
 import { defineTool } from '../tool'
 import { z } from '../zod'
@@ -52,38 +45,6 @@ interface Plan {
   preview: string
   confirm?: boolean
   apply(signal?: AbortSignal): Promise<ChangeResult>
-}
-
-/** A page a write names: a reference from a Confluence tool, or a link to a page on this site. */
-const pageTarget = z.union([
-  pageReference,
-  z.string().min(1).max(2048).describe('A link to a published page on the Confluence site in the current tab.'),
-])
-type PageTarget = z.output<typeof pageTarget>
-const page = pageTarget
-  .optional()
-  .describe(
-    'The page: a page reference returned by a Confluence tool in this question, or a link to a page on this Confluence site. Omit for the page open in the current tab.',
-  )
-
-/** The page a call names, on the captured site. */
-function pageAt(memory: ToolMemory, tab: ConfluenceTab, at: PageTarget): PageReference {
-  if (typeof at !== 'string') {
-    requirePage(memory, at)
-    return at
-  }
-  const linked = linkedPage(tab, at)
-  if (!linked)
-    throw new Error(
-      'Confluco reads a page link only as …/pages/viewpage.action?pageId=<id> or …/spaces/<key>/pages/<id> on the ' +
-        'Confluence site in the current tab. For another form, find the page with search_pages and pass its reference.',
-    )
-  return linked
-}
-
-/** The page a call names, or `undefined` for the page open in the tab. */
-function resolvePage(memory: ToolMemory, tab: ConfluenceTab, at: PageTarget | undefined): PageReference | undefined {
-  return at === undefined ? undefined : pageAt(memory, tab, at)
 }
 
 async function requireSameTab(captured: ConfluenceTab): Promise<void> {

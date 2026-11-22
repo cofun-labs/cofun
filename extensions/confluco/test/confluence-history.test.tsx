@@ -300,6 +300,21 @@ describe('published page labels', () => {
     expect(toolText(browser)).toContain('Use a page reference returned by a Confluence tool')
     expect(browser.workspaceRequests).toEqual([])
   })
+
+  it('[@no-uc:wiring] lists the labels of a page named by a link on this site', async () => {
+    const { browser, user } = await panel()
+    const other = { ...current, id: '43', title: 'Other page' }
+    browser.confluenceResponse = (url) =>
+      new URL(url).pathname.endsWith('/label') ? Response.json({ results: [label] }) : Response.json(other)
+    browser.ai.script.push(
+      { toolCalls: [tool('list_page_labels', { page: base + '/pages/viewpage.action?pageId=43' })] },
+      { reply: 'The other page has one label.' },
+    )
+    await ask(user, 'Which labels does the other page have?')
+    expect(await screen.findByText('The other page has one label.')).toBeVisible()
+    expect(browser.workspaceRequests.map(({ url }) => new URL(url).pathname)).toContain('/kb/rest/api/content/43/label')
+    expect(toolText(browser)).toContain('"name":"sample-label"')
+  })
 })
 
 it('[UC-CONFLUCO-CONFLUENCE-006-S07] verifies each of several label changes on its page', async () => {
