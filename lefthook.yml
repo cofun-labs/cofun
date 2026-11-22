@@ -1,4 +1,11 @@
 pre-commit:
   commands:
     check:
-      run: pnpm check
+      # nice: the checks yield the CPU to whatever else the machine is doing.
+      run: nice -n 10 pnpm check
+      # Caps how many test files each package's vitest runs at once (CI uses 3). vitest's default is the
+      # CPU count minus 1 per package, and `pnpm -r test` runs up to 4 packages at once, so a commit on a
+      # 10-core machine ran up to ~36 vitest workers, and UI tests hit their 10s timeout under the load.
+      # Locally it is lower than in CI, so a commit leaves most of the machine free.
+      env:
+        VITEST_MAX_WORKERS: "2"
