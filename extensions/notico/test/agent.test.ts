@@ -1,6 +1,7 @@
 // Notico's use of the agent loop (@cofun/agent) against the real worker, with the model behind it scripted: when
-// tools run and when they ask first, when a question stops, what a conversation carries over, and the
-// Notion request budget. What the agent and the worker must agree on is in worker/test/extension.test.ts.
+// tools ask first, a question stopped after a change, what a conversation carries over, and the Notion
+// request budget. The loop's own rules are in packages/agent/test/loop.test.ts, and what the agent and
+// the worker must agree on is in worker/test/extension.test.ts.
 import { WorkerClient, WorkerError } from '@cofun/worker-client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
@@ -606,54 +607,6 @@ describe('extension agent against the worker', () => {
     expect(tab.sent).toHaveLength(1)
   })
 
-  it('[UC-NOTICO-AGENT-001-S05] a model that keeps calling tools is stopped at the step limit', async () => {
-    const { tool, runs } = pageTool()
-    ai.toolCalls = [{ name: 'lookup_page', arguments: '{}' }]
-    const agent = makeAgent({ tools: [tool], maxSteps: 3 })
-    const { result, updates } = await ask(agent, 'Which page am I on?')
-    expect(result).toEqual({ status: 'step_limit', steps: 3 })
-    expect(ai.calls).toHaveLength(3)
-    // The last step's tool is refused, not run: the model would never see its result.
-    expect(runs).toHaveLength(2)
-    expect(updates.flatMap((u) => (u.type === 'tool_end' ? [u.status] : []))).toEqual(['done', 'done', 'skipped'])
-    // The panel gets a start for the refused call too, so it can mark that call as skipped.
-    const refusedId = updates.filter((u) => u.type === 'tool_end').at(-1)!.id
-    expect(updates).toContainEqual(expect.objectContaining({ type: 'tool_start', id: refusedId }))
-
-    // The conversation stays usable: the next question is answered, with the refused call answered too.
-    ai.toolCalls = undefined
-    expect((await ask(agent, 'Thanks')).result).toEqual({ status: 'done' })
-    expect(sentMessages(3).at(-2)).toMatchObject({ role: 'tool', content: expect.stringContaining('limit of 3 steps') })
-  })
-
-  it('[UC-NOTICO-AGENT-001-S31] a model that keeps calling failing tools is stopped after 10 failed calls', async () => {
-    const runs: unknown[] = []
-    const failing: ToolSpec = {
-      ...pageTool().tool,
-      run: async (args) => (runs.push(args), Promise.reject(new Error('Page not found.'))),
-    }
-    // Each step, a call that fails and one the user declines: only the failures count.
-    ai.toolCalls = [{ name: 'lookup_page', arguments: '{}' }, RENAME_CALL]
-    const agent = makeAgent({ tools: [failing, renameTool().tool] })
-    const { result, updates } = await ask(agent, 'Which page am I on?', async () => false)
-    expect(result).toEqual({
-      status: 'error',
-      message: 'Stopped: 10 actions in this question failed. Ask again, perhaps in other words.',
-    })
-    expect(ai.calls).toHaveLength(10)
-    expect(runs).toHaveLength(10)
-    // The call after the 10th failure, in the same step, is refused and the user is not asked.
-    expect(toolStatuses(updates).slice(-3)).toEqual(['declined', 'failed', 'skipped'])
-
-    // The next question starts counting again, and the model knows why the call was not run.
-    ai.toolCalls = undefined
-    expect((await ask(agent, 'Thanks')).result).toEqual({ status: 'done' })
-    expect(sentMessages(10).at(-2)).toMatchObject({
-      role: 'tool',
-      content: 'Not run: 10 tool calls of this question failed, so it stopped.',
-    })
-  })
-
   it('[UC-NOTICO-SESSION-001-S01] the conversation carries over to the next question', async () => {
     const agent = makeAgent()
     await ask(agent, 'first')
@@ -775,113 +728,6 @@ describe('extension agent against the worker', () => {
     expect((await ask(agent, 'And now?')).result).toEqual({ status: 'stopped' })
   })
 
-  it('[UC-NOTICO-AGENT-001-S12] stopping during a tool keeps the tools used so far, and drops what had not started', async () => {
-    let agent: CopilotAgent<ToolMemory>
-    const { tool: rename, runs } = renameTool()
-    const slow: ToolSpec = {
-      ...pageTool().tool,
-      run: (_args, signal) =>
-        new Promise((_resolve, reject) => {
-          signal?.addEventListener('abort', () => reject(new Error('aborted')))
-          agent.stop()
-        }),
-    }
-    agent = makeAgent({ tools: [rename, slow] })
-    // Step 1 renames the page. Step 2 reads it, and would rename it again, but Stop comes first.
-    ai.script = [{ toolCalls: [RENAME_CALL] }, { toolCalls: [{ name: 'lookup_page', arguments: '{}' }, RENAME_CALL] }]
-    const stopped = await ask(agent, 'Rename this page to Q4 Plan', async () => true)
-    expect(stopped.result).toEqual({ status: 'stopped' })
-    expect(runs).toHaveLength(1)
-    // The tool cut short shows as stopped, not as a failure of its own; the last call never started.
-    expect(toolStatuses(stopped.updates)).toEqual(['done', 'stopped'])
-    expect(agent.history().flatMap((m) => (m.role === 'tool' ? [[m.name, m.status]] : []))).toEqual([
-      ['rename_page', 'done'],
-      ['lookup_page', 'stopped'],
-    ])
-
-    // The next question carries both steps, each call answered right after it; the worker accepts it.
-    expect((await ask(agent, 'What is it called now?')).result).toEqual({ status: 'done' })
-    const sent = sentMessages(2)
-    expect(sent.map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'tool', 'assistant', 'tool', 'user'])
-    expect(sent[3]).toMatchObject({ role: 'tool', tool_call_id: 'chatcmpl-tool-0', content: 'Renamed.' })
-    expect(sent[4]).toMatchObject({
-      tool_calls: [{ id: 'chatcmpl-tool-1', function: { name: 'lookup_page' } }],
-    })
-    // The model is told the tool was cut short and may have done part of its work.
-    expect(sent[5]).toMatchObject({
-      role: 'tool',
-      tool_call_id: 'chatcmpl-tool-1',
-      // The tool's own error follows, in case it failed on its own.
-      content: expect.stringMatching(/may have partly happened.*\n.*aborted/s),
-    })
-  })
-
-  it('[UC-NOTICO-AGENT-001-S13] a question that fails after a tool ran keeps the tool for the next question', async () => {
-    const { tool, runs } = renameTool()
-    const failing: ToolSpec = {
-      ...tool,
-      run: async (args, signal, context) => {
-        // The model fails on the request that sends the result back.
-        ai.failWith = new Error('capacity')
-        return tool.run(args, signal, context)
-      },
-    }
-    const agent = makeAgent({ tools: [failing] })
-    ai.script = [{ toolCalls: [RENAME_CALL] }]
-    const failed = await ask(agent, 'Rename this page to Q4 Plan', async () => true)
-    expect(failed.result).toMatchObject({ status: 'error' })
-    expect(runs).toEqual([{ title: 'Q4 Plan' }])
-
-    ai.failWith = undefined
-    expect((await ask(agent, 'Did it work?')).result).toEqual({ status: 'done' })
-    expect(sentMessages(2)).toEqual([
-      { role: 'system', content: 'You are Notico.' },
-      { role: 'user', content: 'Rename this page to Q4 Plan' },
-      {
-        role: 'assistant',
-        content: '',
-        tool_calls: [
-          {
-            id: 'chatcmpl-tool-0',
-            type: 'function',
-            function: { name: 'rename_page', arguments: '{"title":"Q4 Plan"}' },
-          },
-        ],
-      },
-      { role: 'tool', tool_call_id: 'chatcmpl-tool-0', content: 'Renamed.' },
-      { role: 'user', content: 'Did it work?' },
-    ])
-  })
-
-  it('[UC-NOTICO-AGENT-001-S13] a question stopped or failed before any tool ran is left out', async () => {
-    // Fails on the first model request.
-    ai.failWith = new Error('capacity')
-    const agent = makeAgent()
-    expect((await ask(agent, 'first')).result).toMatchObject({ status: 'error' })
-    ai.failWith = undefined
-
-    // Stopped while its first model request is under way.
-    let stopNext = true
-    env.AI = ai = new (class extends FakeAiBinding {
-      override async run(model: string, inputs: Record<string, unknown>, options?: Record<string, unknown>) {
-        if (stopNext) stopping.stop()
-        stopNext = false
-        return super.run(model, inputs, options)
-      }
-    })('你好 来自 worker')
-    const stopping = makeAgent()
-    expect((await ask(stopping, 'second')).result).toEqual({ status: 'stopped' })
-
-    for (const a of [agent, stopping]) {
-      expect(a.history()).toEqual([])
-      await ask(a, 'hi')
-      expect(ai.calls.at(-1)!.inputs.messages).toEqual([
-        { role: 'system', content: 'You are Notico.' },
-        { role: 'user', content: 'hi' },
-      ])
-    }
-  })
-
   it('[UC-NOTICO-AGENT-001-S09] a tool the user declines does not run, and the agent continues without it', async () => {
     const { tool, runs } = renameTool()
     ai.script = [{ toolCalls: [RENAME_CALL] }, { reply: 'OK, I left the title as it is' }]
@@ -979,7 +825,7 @@ describe('extension agent against the worker', () => {
     expect(result).toEqual({ status: 'done' })
   })
 
-  it('[UC-NOTICO-AGENT-001-S12] stopping while the user is asked counts as no, ends the question, and keeps the call as stopped', async () => {
+  it('[UC-NOTICO-AGENT-001-S09] stopping while the user is asked counts as no, ends the question, and keeps the call as stopped', async () => {
     const { tool, runs } = renameTool()
     const agent = makeAgent({ tools: [tool] })
     ai.script = [{ toolCalls: [RENAME_CALL] }]

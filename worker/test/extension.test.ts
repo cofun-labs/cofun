@@ -1,6 +1,6 @@
 // Runs the extensions' real agent (@cofun/agent, in packages/agent/) against the worker, for what the two must
 // agree on: the streamed reply, the tool-call round trip, sessions, credits, the cost of a question,
-// and a model change. The agent's own rules are tested in extensions/notico/test/agent.test.ts, and
+// and a model change. The agent loop's own rules are tested in packages/agent/test/loop.test.ts, and
 // the worker client's (its web reads and searches) in packages/worker-client/test/.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
@@ -169,7 +169,7 @@ describe('extension agent against the worker', () => {
     ])
   })
 
-  it('[UC-NOTICO-AGENT-001-S04] a tool the model asks for runs in the extension and the answer uses its result', async () => {
+  it('[UC-WEBCO-AGENT-001-S01] a tool the model asks for runs in the extension and the answer uses its result', async () => {
     const { tool, runs } = pageTool()
     ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }, { reply: 'You are on Q4 Roadmap' }]
     const { result, updates, reply } = await ask(makeAgent({ tools: [tool] }), 'Which page am I on?')
