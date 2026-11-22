@@ -349,6 +349,9 @@ describe('extension agent against the worker', () => {
   })
 })
 
+// Continuing a long chat is Webco's UC-WEBCO-CHAT-007, shown in its side panel tests
+// (extensions/webco/test/long-chats.test.tsx); these are the cases of how the summary requests are
+// cut and charged.
 describe('conversation compaction', () => {
   // The smallest window the agent takes, so a conversation outgrows it with less text. With the
   // worker's 65,536-token reply limit, a request compacts and must fit at 134,464 estimated tokens,
@@ -363,7 +366,7 @@ describe('conversation compaction', () => {
    */
   const OVER_TRIGGER = 'x'.repeat(475_000)
 
-  it('[UC-AGENT-CHAT-001-S01] compacts a tool-heavy question and continues with its original input', async () => {
+  it('[@no-uc:money] the requests of a compacted question, its summary among them, are charged to its chat and turn', async () => {
     const { tool, runs } = pageTool({ title: 'x'.repeat(3200), url: 'https://www.notion.so/example' })
     const agent = makeAgent({ tools: [tool] })
     const name = tool.name
@@ -400,27 +403,6 @@ describe('conversation compaction', () => {
       Array(4).fill({ chat_id: chat, turn_id: expect.any(String) }),
     )
     expect(new Set(spends.map((row) => row.turn_id)).size).toBe(1)
-  })
-
-  it('[UC-AGENT-CHAT-001-S02] reuses a summary after reopening and keeps the original history', async () => {
-    // The last answer stays verbatim (under 20,000 tokens); the four before it are summarized.
-    const history: HistoryMessage[] = Array.from({ length: 5 }, (_, n): HistoryMessage[] => [
-      { role: 'user', text: `Question ${n + 1}` },
-      { role: 'assistant', parts: [{ type: 'text', text: `Answer ${n + 1} ${'x'.repeat(n < 4 ? 105_000 : 60_000)}` }] },
-    ]).flat()
-    const options = {}
-    ai.script = [{ reply: 'Earlier decisions concern the launch.' }, { reply: 'Yes.' }]
-    const first = await ask(makeAgent(options, history), 'What did we decide?')
-    expect(first.result.status).toBe('done')
-    expect(first.compaction).toBeDefined()
-    expect(first.conversation?.slice(0, history.length)).toEqual(history)
-
-    const reopened = makeAgent(options, structuredClone(first.conversation), structuredClone(first.compaction))
-    expect((await ask(reopened, 'And the launch date?')).result.status).toBe('done')
-    expect(ai.calls).toHaveLength(3)
-    expect(sentMessages(2)[1].content).toBe(sentMessages(1)[1].content)
-    expect(sentMessages(2).at(-1)?.content).toBe('And the launch date?')
-    expect(reopened.history().slice(0, history.length)).toEqual(history)
   })
 
   it('[@no-uc:data] a summary cut short by the model fails without advancing the checkpoint', async () => {
@@ -485,7 +467,7 @@ describe('conversation compaction', () => {
     expect(sentMessages(1)[1].content).toContain('The deadline is Friday.')
   })
 
-  it('[UC-AGENT-CHAT-001-S03] a smaller selected model compacts the prefix in order on its next request', async () => {
+  it('[UC-WEBCO-CHAT-007-S03] a smaller selected model compacts the prefix in order on its next request', async () => {
     const history: HistoryMessage[] = [
       { role: 'user', text: 'The launch code is OSPREY-73.' },
       {
@@ -552,20 +534,6 @@ describe('conversation compaction', () => {
     } finally {
       globalThis.fetch = routed
     }
-  })
-
-  it('[UC-AGENT-CHAT-001-S04] refuses a model below the minimum window before sending the question', async () => {
-    const agent = makeAgent({
-      model: async () => ({
-        service: 'openrouter',
-        key: 'test-key',
-        model: { id: 'test/too-small', name: 'Too small', contextLength: 199_999, price: { input: 0, output: 0 } },
-      }),
-    })
-    const answer = await ask(agent, 'Is this a large enough window?')
-    expect(answer.result).toMatchObject({ status: 'error', message: expect.stringContaining('200,000 tokens') })
-    expect(answer.rounds).toBe(0)
-    expect(agent.history()).toEqual([])
   })
 
   it('[@no-uc:money] an oversized prefix beyond four summary requests is refused before spending', async () => {

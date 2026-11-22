@@ -2,13 +2,14 @@
   "name": "@cofun/panel-test",
   "version": "0.0.0",
   "private": true,
-  "description": "The side panel's UI test harness the extensions' tests share: a browser with the extension installed, the worker it talks to, and fakes of Clerk, OpenRouter, PostHog, and DuckDuckGo",
+  "description": "The side panel's UI test harness the extensions' tests share: a browser with the extension installed, the worker it talks to, and fakes of Clerk, OpenRouter, PostHog, DuckDuckGo, and YouTube",
   "type": "module",
   "exports": {
     ".": "./src/browser.ts",
     "./clerk": "./src/clerk.tsx",
     "./openrouter": "./src/openrouter.ts",
-    "./posthog": "./src/posthog.ts"
+    "./posthog": "./src/posthog.ts",
+    "./youtube": "./src/youtube.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

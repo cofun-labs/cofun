@@ -1,4 +1,4 @@
-// pnpm use-cases (run by pnpm check): checks the use cases in extensions/*/use-cases, packages/*/use-cases, and worker/use-cases
+// pnpm use-cases (run by pnpm check): checks the use cases in extensions/*/use-cases and worker/use-cases
 // against the tests named after their scenarios (see use-cases.ts and docs/bdd.md). Exits 1 on an
 // error; warnings alone exit 0.
 import { globSync, readFileSync } from 'node:fs'
@@ -14,7 +14,8 @@ function read(patterns: string[]): SourceFile[] {
 }
 
 const report = checkUseCases(
-  read(['extensions/*/use-cases/**/UC-*.md', 'packages/*/use-cases/**/UC-*.md', 'worker/use-cases/**/UC-*.md']),
+  // A package has none: one left there fails (see readRows).
+  read(['extensions/*/use-cases/**/UC-*.md', 'packages/*/use-cases/**/*.md', 'worker/use-cases/**/UC-*.md']),
   read([
     'worker/test/**/*.test.{ts,tsx}',
     'extensions/*/test/**/*.test.{ts,tsx}',
@@ -26,7 +27,7 @@ const report = checkUseCases(
 // branch made before the move, would not be read at all, so it fails.
 for (const file of globSync('docs/use-cases/**/*.md', { cwd: ROOT }).sort()) {
   report.errors.push(
-    `${file}: use cases live in extensions/<name>/use-cases/, packages/<name>/use-cases/, and worker/use-cases/ (docs/bdd.md#products)`,
+    `${file}: use cases live in extensions/<name>/use-cases/ and worker/use-cases/ (docs/bdd.md#products)`,
   )
 }
 
