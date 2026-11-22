@@ -1,9 +1,10 @@
 // Checks that the use case scenarios and the tests named after them agree (docs/bdd.md).
 //
 // Each product keeps its use cases next to its code: an extension's in extensions/<name>/use-cases/,
-// the worker's (behavior of the backend alone) in worker/use-cases/, and a shared package's (the rules
-// a library the extensions call owns) in packages/<name>/use-cases/. A scenario is matched only
-// against the tests that can verify it: its own product's tests and the worker's.
+// and the worker's (behavior of the backend alone) in worker/use-cases/. A shared package has none:
+// what every extension shares is Webco's. A scenario is matched only against the tests that can
+// verify it: its own product's tests and the worker's. A package's tests may name Webco's scenarios
+// (more cases of a rule of the shared code, tested where they are cheapest), but don't verify them.
 //
 // Two rules fail: an api-test scenario marked ✅ must have such a test that names its ID, and every test
 // names a scenario ID or says which harm it guards with [@no-uc:<kind>] (docs/bdd.md#what-gets-a-test).
@@ -26,13 +27,15 @@ type Strategy = 'api-test' | 'ai-e2e'
 
 /** The worker, whose tests may verify any product's scenarios. */
 const WORKER = 'worker'
+/** The extension with only what every extension shares, whose scenarios a package's tests may verify too. */
+const WEBCO = 'webco'
 
 interface Row {
   id: string
   strategy: Strategy
   verified: boolean
   priority: string
-  /** The product whose folder holds the row: an extension's folder name, `packages/<name>`, or `worker`. */
+  /** The product whose folder holds the row: an extension's folder name, or `worker`. */
   product: string
   /** Where the row is: `extensions/notico/use-cases/….md:12`. */
   at: string
@@ -56,16 +59,9 @@ const OLD_TEST_ID = /\[(UC-[A-Z]+-\d+-S\d+)\]/g
 /** The product a use case or test file belongs to, from its folder. */
 function productOf(file: string): string {
   if (file.startsWith(`${WORKER}/`)) return WORKER
-  // A package's folder name is lowercase words joined by hyphens: worker-client.
+  // A package has no ID prefix of its own (it has no use cases), so any folder name will do.
   const pkg = /^packages\/([^/]+)\//.exec(file)
-  if (pkg) {
-    if (!/^[a-z]+(-[a-z]+)*$/.test(pkg[1])) {
-      throw new Error(
-        `packages/${pkg[1]}: a package's folder name is lowercase words and hyphens only (docs/bdd.md#ids)`,
-      )
-    }
-    return `packages/${pkg[1]}`
-  }
+  if (pkg) return `packages/${pkg[1]}`
   const extension = /^extensions\/([^/]+)\//.exec(file)
   if (!extension) throw new Error(`${file} is not in an extension's folder, a package's, or the worker's`)
   // The folder name, in capitals, is the product's ID prefix, which may hold letters only.
@@ -77,21 +73,21 @@ function productOf(file: string): string {
   return extension[1]
 }
 
-/**
- * What a product's IDs start with: its name, COFUN for the worker (the platform every extension
- * shares), or a package's folder name without its hyphens (WORKERCLIENT for packages/worker-client).
- */
+/** What a product's IDs start with: its name in capitals, or COFUN for the worker (the platform every extension shares). */
 function prefixOf(product: string): string {
-  if (product === WORKER) return 'COFUN'
-  return product
-    .replace(/^packages\//, '')
-    .replaceAll('-', '')
-    .toUpperCase()
+  return product === WORKER ? 'COFUN' : product.toUpperCase()
 }
 
 function readRows(file: SourceFile, report: Report): Row[] {
   const rows: Row[] = []
   const product = productOf(file.path)
+  // A package is implementation, not a product: one of its use cases would be read as no one's.
+  if (product.startsWith('packages/')) {
+    report.errors.push(
+      `${file.path}: a package has no use cases; a rule of what every extension shares is Webco's, in extensions/webco/use-cases/ (docs/bdd.md#products)`,
+    )
+    return rows
+  }
   let strategy: Strategy | undefined
   file.text.split('\n').forEach((raw, index) => {
     // Markdown still reads a line with leading spaces as a table row or heading.
@@ -289,9 +285,18 @@ function readTestIds(file: SourceFile, report: Report): Map<string, TestId[]> {
   return ids
 }
 
-/** Whether a test in one product's folder may verify a scenario of another's: its own, or any from the worker's tests. */
+/** Whether a test in one product's folder verifies a scenario: its own product's, or any from the worker's tests. */
 function verifies(test: TestId, row: Row): boolean {
   return test.product === row.product || test.product === WORKER
+}
+
+/**
+ * Whether a test may name a scenario: one it verifies, or Webco's from a package's tests, which hold
+ * more cases of a rule Webco's own tests show once. Those don't count toward its ✅: only a test
+ * through the side panel (or the worker's) does.
+ */
+function names(test: TestId, row: Row): boolean {
+  return verifies(test, row) || (row.product === WEBCO && test.product.startsWith('packages/'))
 }
 
 /** Words past which a Behavior section is likely a list of rules, not a few sentences (docs/bdd.md#structure). */
@@ -326,7 +331,14 @@ export function checkUseCases(useCases: SourceFile[], tests: SourceFile[]): Repo
     report.scenarios[row.strategy]++
     const test = tested.get(row.id)?.find((found) => verifies(found, row))?.at
     if (row.strategy === 'api-test') {
-      if (row.verified && !test) report.errors.push(`${row.at}: ${row.id} is ✅ api-test, but no test names it`)
+      if (row.verified && !test) {
+        const named = tested.get(row.id)?.some((found) => names(found, row))
+        report.errors.push(
+          named
+            ? `${row.at}: ${row.id} is ✅ api-test, but only a package's tests name it; a test of Webco's side panel verifies it`
+            : `${row.at}: ${row.id} is ✅ api-test, but no test names it`,
+        )
+      }
       if (!row.verified && test) report.warnings.push(`${row.at}: ${row.id} is 🚧 but has a test (${test}): mark it ✅`)
       // P0 must be verified before merge (AGENTS.md); a warning, since a PR may add one on its way there.
       if (!row.verified && !test && row.priority === 'P0') {
@@ -343,8 +355,13 @@ export function checkUseCases(useCases: SourceFile[], tests: SourceFile[]): Repo
 
   for (const [id, found] of tested) {
     for (const test of found) {
-      if (!(byId.get(id) ?? []).some((row) => verifies(test, row))) {
-        const where = test.product === WORKER ? 'no use case' : `no use case of ${test.product}`
+      if (!(byId.get(id) ?? []).some((row) => names(test, row))) {
+        const where =
+          test.product === WORKER
+            ? 'no use case'
+            : test.product.startsWith('packages/')
+              ? `no use case of ${WEBCO}`
+              : `no use case of ${test.product}`
         report.warnings.push(`${test.at}: names ${id}, which ${where} has`)
         break
       }

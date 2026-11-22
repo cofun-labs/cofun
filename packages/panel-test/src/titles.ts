@@ -9,12 +9,20 @@ export function failingTitles(): FakeAiBinding {
   return titles
 }
 
-/** Which model answers a request: the title request is the panel's only one without tools. */
+/**
+ * Which model answers a request: a title request, which asks for a title in its first words
+ * (`TITLE_PROMPT` in @cofun/agent's title.ts), goes to `titles`; the rest (questions, and the
+ * summaries of a long chat) to `ai`.
+ */
 export function titleRequests(
   service: { ai: FakeAiBinding; titles: FakeAiBinding },
   body: Record<string, unknown>,
 ): FakeAiBinding {
-  return Array.isArray(body.tools) && body.tools.length > 0 ? service.ai : service.titles
+  const messages = Array.isArray(body.messages) ? body.messages : []
+  const asksForTitle = messages.some(
+    (m: { content?: unknown }) => typeof m.content === 'string' && m.content.startsWith('Write a title of '),
+  )
+  return asksForTitle ? service.titles : service.ai
 }
 
 /** A title request to a user's own model, answered as an OpenAI-compatible service streams it, or refused. */

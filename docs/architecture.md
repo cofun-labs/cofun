@@ -137,7 +137,8 @@ packages/analytics/       @cofun/analytics: sends an extension's usage events to
                           the PostHog SDK
 packages/panel-test/      @cofun/panel-test: the side panel's UI test harness every extension's tests share (a
                           browser with the extension installed, the worker behind it, and the Clerk, OpenRouter,
-                          PostHog, and DuckDuckGo fakes); runs against the worker, never imports an extension
+                          PostHog, DuckDuckGo, and YouTube fakes); runs against the worker, never imports an
+                          extension
 packages/tools/           @cofun/tools: the generic tools (tabs, web pages, searches, long results) and the site layers
                           they read the web with
   src/tab.ts              the site layer for a page in a tab: reads the page a tab shows, once the user allowed
