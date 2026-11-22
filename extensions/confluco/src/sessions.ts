@@ -24,7 +24,8 @@ const StoredId = z.object({ id: z.string() })
 
 /**
  * A session's conversation, as the second store keeps it. Chats Confluco 0.1.0 saved also hold `undo`, the
- * reversal of their latest edit or trash action, which Confluco no longer offers: it is dropped when read.
+ * reversal of their latest edit or trash action, which Confluco no longer offers: it is dropped when read. This
+ * note and the test that pins it can go once a store migration rewrites the `messages` records.
  */
 const StoredMessages = z.object({
   messages: z.array(HistoryMessage),
