@@ -4,13 +4,11 @@
 
 A signed-in user asks the AI something it can only answer with what the extension has, such as what a Notion page says. The AI asks the extension to run tools, one after another if needed, and answers from their results. Each question is told which Notion page it goes with: the one open in the current tab, unless the user takes it off.
 
-The user can stop the agent at any time; a question gets a bounded number of steps, and asks the user before it goes past a number of Notion requests. However it ends, answered, failed, or stopped, the reply shows what the agent did and how much of Notion it read and changed: searching and listing pages are not reading them, and only changes that were made count, not one that failed, was declined, or was stopped.
+The user can stop the agent at any time, and a question asks the user before it goes past a number of Notion requests. However it ends, answered, failed, or stopped, the reply shows what the agent did and how much of Notion it read and changed: searching and listing pages are not reading them, and only changes that were made count, not one that failed, was declined, or was stopped.
 
 Key constraints:
 
 - A page the user took off a question is never used for it in place of a page the AI names: not read, and not even named to the AI.
-- The rules of the agent loop every extension shares, the step limit, the limit on failed tool calls, what Stop keeps, and what a failed or stopped question leaves for the next one, are UC-WEBCO-AGENT-001's.
-- Tools run in the extension, never on the server. The server only carries the AI's request to run a tool and the result back (UC-COFUN-CHAT-001).
 - A tool that moves the user's pages to the trash never runs without the user's confirmation, which they are asked for each time; other changes are made right away, and the side panel shows them. In Read only (UC-NOTICO-AGENT-003) no tool that changes data is offered at all. If they decline, the tool does not run and the agent goes on without it; if they stop the agent while it waits, the tool does not run and the question ends.
 - Tool definitions, tool requests, and tool results are part of the conversation: the same size limits, credits, and usage records apply, and none of their content is kept by the service (UC-COFUN-CHAT-001). Each round trip to the model is charged credits for what it cost (UC-NOTICO-CHAT-001).
 
