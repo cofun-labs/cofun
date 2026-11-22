@@ -1,4 +1,9 @@
 pre-commit:
   commands:
     check:
-      run: pnpm check
+      # nice, and at most 2 test files at a time in each package's vitest (its default is the CPU
+      # count minus 1, with `pnpm -r test` running up to 4 packages at once), so a commit leaves
+      # most of the machine free.
+      run: nice -n 10 pnpm check
+      env:
+        VITEST_MAX_WORKERS: "2"
