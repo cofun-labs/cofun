@@ -3,8 +3,8 @@
 // Each product keeps its use cases next to its code: an extension's in extensions/<name>/use-cases/,
 // and the worker's (behavior of the backend alone) in worker/use-cases/. A shared package has none:
 // what every extension shares is Webco's. A scenario is matched only against the tests that can
-// verify it: its own product's tests and the worker's, and for Webco's, a package's too (more cases
-// of a rule of the shared code, tested where they are cheapest).
+// verify it: its own product's tests and the worker's. A package's tests may name Webco's scenarios
+// (more cases of a rule of the shared code, tested where they are cheapest), but don't verify them.
 //
 // Two rules fail: an api-test scenario marked ✅ must have such a test that names its ID, and every test
 // names a scenario ID or says which harm it guards with [@no-uc:<kind>] (docs/bdd.md#what-gets-a-test).
@@ -292,16 +292,18 @@ function readTestIds(file: SourceFile, report: Report): Map<string, TestId[]> {
   return ids
 }
 
-/**
- * Whether a test in one product's folder may verify a scenario: its own product's, any from the
- * worker's tests, and Webco's from a package's tests.
- */
+/** Whether a test in one product's folder verifies a scenario: its own product's, or any from the worker's tests. */
 function verifies(test: TestId, row: Row): boolean {
-  return (
-    test.product === row.product ||
-    test.product === WORKER ||
-    (row.product === WEBCO && test.product.startsWith('packages/'))
-  )
+  return test.product === row.product || test.product === WORKER
+}
+
+/**
+ * Whether a test may name a scenario: one it verifies, or Webco's from a package's tests, which hold
+ * more cases of a rule Webco's own tests show once. Those don't count toward its ✅: only a test
+ * through the side panel (or the worker's) does.
+ */
+function names(test: TestId, row: Row): boolean {
+  return verifies(test, row) || (row.product === WEBCO && test.product.startsWith('packages/'))
 }
 
 /** Words past which a Behavior section is likely a list of rules, not a few sentences (docs/bdd.md#structure). */
@@ -336,7 +338,14 @@ export function checkUseCases(useCases: SourceFile[], tests: SourceFile[]): Repo
     report.scenarios[row.strategy]++
     const test = tested.get(row.id)?.find((found) => verifies(found, row))?.at
     if (row.strategy === 'api-test') {
-      if (row.verified && !test) report.errors.push(`${row.at}: ${row.id} is ✅ api-test, but no test names it`)
+      if (row.verified && !test) {
+        const named = tested.get(row.id)?.some((found) => names(found, row))
+        report.errors.push(
+          named
+            ? `${row.at}: ${row.id} is ✅ api-test, but only a package's tests name it; a test of Webco's side panel verifies it`
+            : `${row.at}: ${row.id} is ✅ api-test, but no test names it`,
+        )
+      }
       if (!row.verified && test) report.warnings.push(`${row.at}: ${row.id} is 🚧 but has a test (${test}): mark it ✅`)
       // P0 must be verified before merge (AGENTS.md); a warning, since a PR may add one on its way there.
       if (!row.verified && !test && row.priority === 'P0') {
@@ -353,7 +362,7 @@ export function checkUseCases(useCases: SourceFile[], tests: SourceFile[]): Repo
 
   for (const [id, found] of tested) {
     for (const test of found) {
-      if (!(byId.get(id) ?? []).some((row) => verifies(test, row))) {
+      if (!(byId.get(id) ?? []).some((row) => names(test, row))) {
         const where =
           test.product === WORKER
             ? 'no use case'

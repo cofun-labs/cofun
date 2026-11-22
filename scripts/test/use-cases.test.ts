@@ -171,22 +171,28 @@ describe('checkUseCases', () => {
     expect(report).toEqual({ errors: [], warnings: [], scenarios: { 'api-test': 2, 'ai-e2e': 0 } })
   })
 
-  it("matches Webco's scenario with a package's tests too, and no other extension's", () => {
+  it("lets a package's tests name Webco's scenario, but only Webco's own tests verify it", () => {
     const text = ['# UC-WEBCO-PANEL-006: Read a video', '## Scenarios', '### api-test', TABLE].join('\n')
     const rows = ['| UC-WEBCO-PANEL-006-S01 | P1 | ✅ | … |', '| UC-WEBCO-PANEL-006-S02 | P1 | ✅ | … |']
     const report = checkUseCases(
       [{ path: 'extensions/webco/use-cases/panel/UC-WEBCO-PANEL-006-read.md', text: [text, ...rows].join('\n') }],
       [
-        testIn('packages/tools/test/youtube.test.ts', 'UC-WEBCO-PANEL-006-S01', 'UC-NOTICO-CHAT-001-S01'),
+        testIn(
+          'packages/tools/test/youtube.test.ts',
+          'UC-WEBCO-PANEL-006-S01',
+          'UC-WEBCO-PANEL-006-S02',
+          'UC-NOTICO-CHAT-001-S01',
+        ),
+        testIn('extensions/webco/test/youtube.test.tsx', 'UC-WEBCO-PANEL-006-S01'),
         testIn('extensions/notico/test/youtube.test.ts', 'UC-WEBCO-PANEL-006-S02'),
       ],
     )
     expect(report.errors).toEqual([
-      'extensions/webco/use-cases/panel/UC-WEBCO-PANEL-006-read.md:7: UC-WEBCO-PANEL-006-S02 is ✅ api-test, but no test names it',
+      "extensions/webco/use-cases/panel/UC-WEBCO-PANEL-006-read.md:7: UC-WEBCO-PANEL-006-S02 is ✅ api-test, but only a package's tests name it; a test of Webco's side panel verifies it",
     ])
     expect(report.warnings).toEqual([
-      'packages/tools/test/youtube.test.ts:2: names UC-NOTICO-CHAT-001-S01, which no use case of webco has',
       'extensions/notico/test/youtube.test.ts:1: names UC-WEBCO-PANEL-006-S02, which no use case of notico has',
+      'packages/tools/test/youtube.test.ts:3: names UC-NOTICO-CHAT-001-S01, which no use case of webco has',
     ])
   })
 
