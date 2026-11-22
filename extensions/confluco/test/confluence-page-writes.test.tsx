@@ -237,7 +237,7 @@ describe('create a published page', () => {
     expect(modelResults(browser)).toContain('"version":1,"changed":true,"bodyVerified":true')
   })
 
-  it('[@no-uc:wiring] lets a later call in the question name the page a write returned', async () => {
+  it('[UC-CONFLUCO-CONFLUENCE-001-S09] lets a later call in the question name the page a write returned', async () => {
     const { browser, user } = await openPanel()
     const created = { ...child, body: { storage: storage('') }, version: { number: 1 } }
     browser.confluenceResponse = (url, init) => {
@@ -333,7 +333,7 @@ describe('create a published page', () => {
     }
   })
 
-  it('[@no-uc:access] refuses a parent link on another site without sending a request', async () => {
+  it('[UC-CONFLUCO-CONFLUENCE-001-S08] refuses a parent link on another site without sending a request', async () => {
     const { browser, user } = await openPanel()
     const call = {
       name: 'create_page',

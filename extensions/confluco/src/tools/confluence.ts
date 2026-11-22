@@ -18,26 +18,14 @@ import { labelsArgs, listLabels } from '../confluence/labels'
 import { browseTree, getSpace, listSpaces, listSpacesArgs, spaceArgs, treeArgs } from '../confluence/navigation'
 import { folderReference, type PageReference } from '../confluence/references'
 import type { ConfluenceTab } from '../confluence/tab'
+import type { ToolContext } from '@cofun/agent'
 import { defineTool } from '../tool'
 import { target } from './target'
 import { z } from '../zod'
 import type { ConfluenceContinuation, ToolMemory } from './memory'
 import { asData, clip, quote, withText } from '@cofun/tools'
 import { on, READ, SEARCH } from './shared'
-
-export function remember(memory: ToolMemory, pages: readonly { ref: PageReference }[]) {
-  for (const { ref } of pages) memory.confluenceResources.add(JSON.stringify([ref.instance, ref.id]))
-}
-
-const folderKey = (ref: PageReference) => JSON.stringify([ref.instance, ref.id, 'folder'])
-
-/** A page reference the model passes must be one a Confluence tool returned in this question. */
-export function requirePage(memory: ToolMemory, page?: PageReference) {
-  if (!page || memory.confluenceResources.has(JSON.stringify([page.instance, page.id]))) return
-  if (memory.confluenceResources.has(folderKey(page)))
-    throw new Error('This reference is a folder. Pass it to browse_page_tree as folder.')
-  throw new Error('Use a page reference returned by a Confluence tool during this question, or omit page.')
-}
+import { folderKey, page, remember, requireTarget, resolvePage } from './pages'
 
 /** Remember a tree's pages and folders apart, so a folder's ID is never used as a page's. */
 function rememberTree(memory: ToolMemory, entries: readonly { ref: PageReference; kind?: 'folder' }[]) {
@@ -155,6 +143,7 @@ export const getConfluenceSpace = defineTool({
 export const browseConfluenceTree = defineTool({
   name: 'browse_page_tree',
   args: treeArgs.omit({ start: true }).extend({
+    page,
     folder: folderReference
       .optional()
       .describe('A folder reference from browse_page_tree on Confluence Cloud. Use instead of page to browse it.'),
@@ -162,23 +151,25 @@ export const browseConfluenceTree = defineTool({
   }),
   description:
     'Read ancestors and direct children of the current page, a page reference returned by a Confluence tool, ' +
-    'or a Confluence Cloud folder from this tool. Entries with kind "folder" are folders: pass their ref as folder.',
+    'a link to a page on this site, or a Confluence Cloud folder from this tool. Entries with kind "folder" are ' +
+    'folders: pass their ref as folder.',
   describe: () => on(READ, undefined, 'the Confluence page tree'),
   run: async (args, signal, { memory, ask }) => {
     if (args.page && args.folder) throw new Error('Pass page or folder, not both.')
-    requirePage(memory, args.page)
+    requireTarget(memory, args.page)
     if (args.folder && !memory.confluenceResources.has(folderKey(args.folder)))
       throw new Error('Use a folder reference returned by browse_page_tree during this question.')
     const tab = await target({ memory, ask })
     if (args.folder && !tab.instance.cloud) throw new Error('Folders are only on Confluence Cloud.')
-    const key = requestKey(tab, 'browse_page_tree', { page: args.page, folder: args.folder })
+    const at = resolvePage(memory, tab, args.page)
+    const key = requestKey(tab, 'browse_page_tree', { page: at, folder: args.folder })
     const tree = await paginate(memory, key, args.nextPage, async (position) => {
       if (!tab.instance.cloud) {
-        const tree = await browseTree({ page: args.page, start: offset(position) }, tab, signal)
+        const tree = await browseTree({ page: at, start: offset(position) }, tab, signal)
         remember(memory, [tree.page, ...tree.ancestors, ...tree.children])
         return tree
       }
-      const where = args.folder ? { folder: args.folder } : { page: args.page }
+      const where = args.folder ? { folder: args.folder } : { page: at }
       const tree = await browseCloudTree(tab, where, cursor(position), signal)
       rememberTree(memory, ['folder' in tree ? tree.folder : tree.page, ...tree.ancestors, ...tree.children])
       return tree
@@ -187,109 +178,111 @@ export const browseConfluenceTree = defineTool({
   },
 })
 
+/** The tab and the page a read names: a reference no tool returned is refused before anything is read. */
+async function pageOn(context: Pick<ToolContext<ToolMemory>, 'memory' | 'ask'>, at: z.output<typeof page>) {
+  requireTarget(context.memory, at)
+  const tab = await target(context)
+  return { tab, page: resolvePage(context.memory, tab, at) }
+}
+
+const onPage = 'the current page, a page reference returned by a Confluence tool, or a link to a page on this site'
+
 export const listConfluenceVersions = defineTool({
   name: 'list_page_versions',
-  args: versionsArgs.omit({ start: true }).extend({ nextPage: collectionNext }),
-  description: 'List versions of the current published page or a page reference returned by a Confluence tool.',
+  args: versionsArgs.omit({ start: true }).extend({ page, nextPage: collectionNext }),
+  description: `List published versions of ${onPage}.`,
   describe: () => on(READ, undefined, 'Confluence page versions'),
-  run: async (args, signal, { memory, ask }) => {
-    requirePage(memory, args.page)
-    const tab = await target({ memory, ask })
-    const key = requestKey(tab, 'list_page_versions', args.page)
-    const listed = await paginate(memory, key, args.nextPage, async (position) =>
+  run: async (args, signal, context) => {
+    const { tab, page } = await pageOn(context, args.page)
+    const key = requestKey(tab, 'list_page_versions', page)
+    const listed = await paginate(context.memory, key, args.nextPage, async (position) =>
       tab.instance.cloud
-        ? listCloudVersions(tab, args.page, cursor(position), signal)
-        : listVersions({ ...args, start: offset(position) }, tab, signal),
+        ? listCloudVersions(tab, page, cursor(position), signal)
+        : listVersions({ page, start: offset(position) }, tab, signal),
     )
-    remember(memory, [listed])
+    remember(context.memory, [listed])
     return result(listed)
   },
 })
 
 export const readConfluenceVersion = defineTool({
   name: 'read_page_version',
-  args: versionArgs,
-  description: 'Read one published version of the current page or a page reference returned by a Confluence tool.',
+  args: versionArgs.extend({ page }),
+  description: `Read one published version of ${onPage}.`,
   describe: (args) => on(READ, args && String(args.version), 'a Confluence page version'),
-  run: async (args, signal, { memory, ask }) => {
-    requirePage(memory, args.page)
-    const tab = await target({ memory, ask })
+  run: async (args, signal, context) => {
+    const { tab, page } = await pageOn(context, args.page)
     const version = tab.instance.cloud
-      ? await readCloudVersion(tab, args.page, args.version, signal)
-      : await readPageVersion(args, tab, signal)
-    remember(memory, [version])
+      ? await readCloudVersion(tab, page, args.version, signal)
+      : await readPageVersion({ ...args, page }, tab, signal)
+    remember(context.memory, [version])
     return result(version)
   },
 })
 
 export const getConfluencePageAccess = defineTool({
   name: 'get_page_access',
-  args: accessArgs,
-  description: 'Read the reported operations and restrictions on the current page or a known page reference.',
+  args: accessArgs.extend({ page }),
+  description: `Read the reported operations and restrictions on ${onPage}.`,
   describe: () => on(READ, undefined, 'Confluence page access'),
-  run: async ({ page }, signal, { memory, ask }) => {
-    requirePage(memory, page)
-    const tab = await target({ memory, ask })
+  run: async (args, signal, context) => {
+    const { tab, page } = await pageOn(context, args.page)
     const access = tab.instance.cloud ? await cloudPageAccess(tab, page, signal) : await pageAccess(page, tab, signal)
-    remember(memory, [access])
+    remember(context.memory, [access])
     return result(access)
   },
 })
 
 export const listConfluenceLabels = defineTool({
   name: 'list_page_labels',
-  args: labelsArgs.omit({ start: true }).extend({ nextPage: collectionNext }),
-  description: 'List page labels for the current page or a page reference returned by a Confluence tool.',
+  args: labelsArgs.omit({ start: true }).extend({ page, nextPage: collectionNext }),
+  description: `List page labels for ${onPage}.`,
   describe: () => on(READ, undefined, 'Confluence page labels'),
-  run: async (args, signal, { memory, ask }) => {
-    requirePage(memory, args.page)
-    const tab = await target({ memory, ask })
-    const key = requestKey(tab, 'list_page_labels', args.page)
-    const listed = await paginate(memory, key, args.nextPage, async (position) =>
+  run: async (args, signal, context) => {
+    const { tab, page } = await pageOn(context, args.page)
+    const key = requestKey(tab, 'list_page_labels', page)
+    const listed = await paginate(context.memory, key, args.nextPage, async (position) =>
       tab.instance.cloud
-        ? listCloudLabels(tab, args.page, cursor(position), signal)
-        : listLabels({ ...args, start: offset(position) }, tab, signal),
+        ? listCloudLabels(tab, page, cursor(position), signal)
+        : listLabels({ page, start: offset(position) }, tab, signal),
     )
-    remember(memory, [listed.page])
+    remember(context.memory, [listed.page])
     return result(listed)
   },
 })
 
 export const listConfluenceComments = defineTool({
   name: 'list_page_comments',
-  args: commentsArgs.omit({ start: true }).extend({ nextPage: collectionNext }),
-  description:
-    'Read comments and replies on the current page or a page reference returned by a Confluence tool. Use nextPage to see more of the discussion.',
+  args: commentsArgs.omit({ start: true }).extend({ page, nextPage: collectionNext }),
+  description: `Read comments and replies on ${onPage}. Use nextPage to see more of the discussion.`,
   describe: () => on(READ, undefined, 'Confluence page comments'),
-  run: async (args, signal, { memory, ask }) => {
-    requirePage(memory, args.page)
-    const tab = await target({ memory, ask })
-    const key = requestKey(tab, 'list_page_comments', args.page)
-    const listed = await paginate(memory, key, args.nextPage, async (position) =>
+  run: async (args, signal, context) => {
+    const { tab, page } = await pageOn(context, args.page)
+    const key = requestKey(tab, 'list_page_comments', page)
+    const listed = await paginate(context.memory, key, args.nextPage, async (position) =>
       tab.instance.cloud
-        ? listCloudComments(tab, args.page, position && 'comments' in position ? position.comments : undefined, signal)
-        : listPageComments({ ...args, start: offset(position) }, tab, signal),
+        ? listCloudComments(tab, page, position && 'comments' in position ? position.comments : undefined, signal)
+        : listPageComments({ page, start: offset(position) }, tab, signal),
     )
-    remember(memory, [listed.page])
+    remember(context.memory, [listed.page])
     return result(listed)
   },
 })
 
 export const listConfluenceAttachments = defineTool({
   name: 'list_page_attachments',
-  args: attachmentsArgs.omit({ start: true }).extend({ nextPage: collectionNext }),
-  description: 'List attachments and download links for the current page or a known page reference.',
+  args: attachmentsArgs.omit({ start: true }).extend({ page, nextPage: collectionNext }),
+  description: `List attachments and download links for ${onPage}.`,
   describe: () => on(READ, undefined, 'Confluence page attachments'),
-  run: async (args, signal, { memory, ask }) => {
-    requirePage(memory, args.page)
-    const tab = await target({ memory, ask })
-    const key = requestKey(tab, 'list_page_attachments', { page: args.page, filename: args.filename })
-    const listed = await paginate(memory, key, args.nextPage, async (position) =>
+  run: async (args, signal, context) => {
+    const { tab, page } = await pageOn(context, args.page)
+    const key = requestKey(tab, 'list_page_attachments', { page, filename: args.filename })
+    const listed = await paginate(context.memory, key, args.nextPage, async (position) =>
       tab.instance.cloud
-        ? listCloudAttachments(tab, args.page, args.filename, cursor(position), signal)
-        : listPageAttachments({ ...args, start: offset(position) }, tab, signal),
+        ? listCloudAttachments(tab, page, args.filename, cursor(position), signal)
+        : listPageAttachments({ page, filename: args.filename, start: offset(position) }, tab, signal),
     )
-    remember(memory, [listed.page])
+    remember(context.memory, [listed.page])
     return result(listed)
   },
 })
