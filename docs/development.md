@@ -16,7 +16,7 @@ pnpm media 367 demo.gif   # upload a PR's demo GIF or screenshots and print thei
 pnpm e2e --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's machine only)
 ```
 
-A lefthook pre-commit hook runs `pnpm check` under `nice` with `VITEST_MAX_WORKERS=2` (CI uses 3), so a commit leaves most of the machine free. GitHub Actions runs it and the browser tests on every pull request.
+A lefthook pre-commit hook runs `pnpm check`. GitHub Actions runs it and the browser tests on every pull request.
 
 See [AGENTS.md](../AGENTS.md) for the issue → PR → review → merge workflow.
 
