@@ -1,13 +1,6 @@
 import { z } from '../zod'
 import { readableText } from './readable-text'
-import {
-  fetchPublishedPage,
-  pageLink,
-  pageReference,
-  pageResource,
-  publishedPage,
-  type PageReference,
-} from './references'
+import { fetchPublishedPage, pageLink, pageReference, publishedPage, type PageReference } from './references'
 import { replaceStorageText } from './storage-edit'
 import {
   createConfluenceContent,
@@ -33,17 +26,6 @@ export const storedPage = pageVersion.extend({
   body: z.object({ storage: z.object({ value: z.string(), representation: z.literal('storage') }) }),
 })
 export const storedFields = 'space,ancestors,version,body.storage'
-const historicalStorage = storedPage.extend({
-  status: z.literal('historical'),
-  version: pageVersion.shape.version.extend({ hidden: z.boolean().optional() }),
-})
-export const pageEditUndo = z.strictObject({
-  page: pageReference,
-  version: pageVersion.shape.version.shape.number.min(2),
-  before: z.string().min(1).max(2000),
-  after: z.string().max(2000),
-})
-export type PageEditUndo = z.output<typeof pageEditUndo>
 
 export type PageWriteRequest =
   | { action: 'create'; title: string; targetUrl?: string; spaceKey?: string; text: string }
@@ -74,12 +56,6 @@ export function requestedPageEdit(message: string): PageEditRequest | undefined 
   const match = (editEnglish.exec(text) ?? editChinese.exec(text))?.groups
   if (!match) return undefined
   return { before: match.before.slice(1, -1), after: match.after.slice(1, -1), targetUrl: match.target }
-}
-
-export function requestedUndo(message: string): boolean {
-  return /^(?:(?:please\s+)?undo (?:the |my )?(?:last|previous) (?:operation|change|edit)|(?:请\s*)?撤销(?:上次|上一次|上一条)(?:操作|改动|编辑))[.!。！]?$/iu.test(
-    message.trim(),
-  )
 }
 
 export function requestedPageWrite(message: string): PageWriteRequest | undefined {
@@ -223,42 +199,6 @@ export async function preparePageEdit(
   const original = await fetchPublishedPage(tab, ref, storedPage, storedFields, signal)
   const value = replaceStorageText(original.body.storage.value, before, after)
   return { tab, ref, original, value, preview: describeEdit('Edit', tab, original, before, after) }
-}
-
-export async function prepareUndoPageEdit(
-  record: PageEditUndo,
-  target: ConfluenceTab | undefined,
-  signal?: AbortSignal,
-) {
-  const tab = requireTab(target)
-  const ref = record.page
-  const original = await fetchPublishedPage(tab, ref, storedPage, storedFields, signal)
-  if (original.version.number !== record.version)
-    refuse('The page has changed since the last edit. Review its version history to decide how to undo it.')
-  const previous = await getConfluence(
-    tab,
-    pageResource(tab, ref),
-    { status: 'historical', version: String(record.version - 1), expand: storedFields },
-    signal,
-  )
-  const parsed = historicalStorage.safeParse(previous.data)
-  if (
-    !parsed.success ||
-    parsed.data.version.hidden ||
-    parsed.data.version.number !== record.version - 1 ||
-    !samePageLocation(parsed.data, original)
-  )
-    refuse('Confluence did not return the matching prior version. Review the page history before undoing.')
-  const value = parsed.data.body.storage.value
-  if (replaceStorageText(value, record.before, record.after) !== original.body.storage.value)
-    refuse('The earlier version does not match the last edit. Review the page history before undoing.')
-  return {
-    tab,
-    ref,
-    original,
-    value,
-    preview: describeEdit('Undo the edit on', tab, original, record.after, record.before),
-  }
 }
 
 function describeEdit(

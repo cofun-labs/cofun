@@ -1,4 +1,4 @@
-import { prepareCloudPageEdit, prepareCloudUndoEdit } from '../confluence/cloud-edits'
+import { prepareCloudPageEdit } from '../confluence/cloud-edits'
 import { prepareCloudRestore } from '../confluence/cloud-status'
 import type { ToolContext } from '@cofun/agent'
 import { applyAttachmentUpload, prepareAttachmentUpload } from '../confluence/attachments'
@@ -15,14 +15,11 @@ import {
   pageTitleArgs,
   preparePageEdit,
   preparePageWrite,
-  prepareUndoPageEdit,
   requestedPageEdit,
   requestedPageWrite,
-  requestedUndo,
 } from '../confluence/page-writes'
 import { captureConfluenceTab, refuse, type ConfluenceTab } from '../confluence/tab'
 import { target } from './target'
-import type { ConfluenceUndo } from '../confluence/undo'
 import { defineTool } from '../tool'
 import { z } from '../zod'
 import type { ConfluenceQuestion, ToolMemory } from './memory'
@@ -32,7 +29,6 @@ import { on, verb } from './shared'
 interface ChangeResult {
   data: object
   changed: boolean
-  undo?: ConfluenceUndo
 }
 
 interface Plan {
@@ -123,17 +119,9 @@ function change<S extends z.ZodObject>(
       const { plan, tab } = prepared
       signal?.throwIfAborted()
       await requireSameTab(context, tab)
-      await question.beforeWrite()
       signal?.throwIfAborted()
-      try {
-        const result = await plan.apply(signal)
-        if (result.changed) memory.confluenceUndo = result.undo
-        return { text: asData([JSON.stringify(result.data)]), details: {}, changed: result.changed }
-      } catch (error) {
-        if (error instanceof Error && 'mayHaveChanged' in error && error.mayHaveChanged === true)
-          memory.confluenceUndo = undefined
-        throw error
-      }
+      const result = await plan.apply(signal)
+      return { text: asData([JSON.stringify(result.data)]), details: {}, changed: result.changed }
     },
   })
 }
@@ -192,11 +180,7 @@ const editPage = change(
       preview: plan.preview,
       async apply(signal) {
         const data = 'apply' in plan ? await plan.apply(signal) : await applyPageEdit(plan, signal)
-        return {
-          data,
-          changed: true,
-          undo: { page: data.page.ref, version: data.version, before: request.before, after: request.after },
-        }
+        return { data, changed: true }
       },
     }
   },
@@ -232,11 +216,7 @@ function pageStatus(action: 'trash' | 'restore') {
           confirm: true,
           async apply(signal) {
             const data = await plan.apply(signal)
-            return {
-              data,
-              changed: data.changed,
-              undo: { kind: 'trash' as const, page: data.page.ref, version: data.version },
-            }
+            return { data, changed: data.changed }
           },
         }
       }
@@ -245,12 +225,8 @@ function pageStatus(action: 'trash' | 'restore') {
         preview: plan.preview,
         confirm: plan.page.status !== (action === 'trash' ? 'trashed' : 'current'),
         async apply(signal) {
-          const { trashDate, ...data } = await applyPageStatus(plan, signal)
-          const undo =
-            data.changed && data.status === 'trashed'
-              ? { kind: 'trash' as const, page: data.page.ref, version: data.version, trashDate }
-              : undefined
-          return { data, changed: data.changed, undo }
+          const data = await applyPageStatus(plan, signal)
+          return { data, changed: data.changed }
         },
       }
     },
@@ -362,50 +338,6 @@ const uploadAttachment = change(
   },
 )
 
-const undoChange = change(
-  'undo_last_change',
-  'the last Confluence change',
-  'Undo the latest verified text edit or trash action in this chat after a direct user request to undo.',
-  noArgs,
-  async (_args, { userText, memory }, _question, tab, signal) => {
-    if (!requestedUndo(userText)) refuse('Ask the user to explicitly request undoing the last operation.')
-    const undo = memory.confluenceUndo
-    if (!undo) refuse('The last workspace change in this conversation has no verified operation that can be undone.')
-    if (tab.instance.cloud) {
-      const plan =
-        'kind' in undo
-          ? await prepareCloudRestore(tab, undefined, signal, undo)
-          : await prepareCloudUndoEdit(undo, tab, signal)
-      return {
-        preview: plan.preview,
-        confirm: 'confirm' in plan && plan.confirm,
-        async apply(signal) {
-          const data = await plan.apply(signal)
-          return { data, changed: data.changed }
-        },
-      }
-    }
-    if ('kind' in undo) {
-      const plan = await preparePageStatus({ action: 'restore' }, tab, signal, undo)
-      return {
-        preview: plan.preview,
-        confirm: plan.reviewAccess,
-        async apply(signal) {
-          const { trashDate: _, ...data } = await applyPageStatus(plan, signal)
-          return { data, changed: data.changed }
-        },
-      }
-    }
-    const plan = await prepareUndoPageEdit(undo, tab, signal)
-    return {
-      preview: plan.preview,
-      async apply(signal) {
-        return { data: await applyPageEdit(plan, signal), changed: true }
-      },
-    }
-  },
-)
-
 const commonWrites = [pageWrite('create'), pageWrite('rename'), changeLabel, addComment]
 const trashPage = pageStatus('trash')
 const movePage = organizePage('move')
@@ -415,7 +347,6 @@ const restorePage = pageStatus('restore')
 export const CONFLUENCE_WRITES = [
   ...commonWrites,
   editPage,
-  undoChange,
   trashPage,
   restorePage,
   movePage,

@@ -3,7 +3,6 @@ import type { SearchContinuation } from '../confluence/api'
 import type { CloudDiscussionPosition } from '../confluence/cloud-inspection'
 import type { AttachmentUpload } from '../confluence/attachments'
 import type { CapturedTab, ConfluenceTab } from '../confluence/tab'
-import type { ConfluenceUndo } from '../confluence/undo'
 
 /** A write resolves its target from the browser state at submission, never from later tab switches. */
 export interface ConfluenceQuestion {
@@ -14,7 +13,6 @@ export interface ConfluenceQuestion {
   attachment?: AttachmentUpload
   writtenTool?: string
   nextLabel: number
-  beforeWrite(): Promise<void>
 }
 
 export type ConfluenceContinuation = SearchContinuation | { comments: CloudDiscussionPosition }
@@ -26,7 +24,6 @@ export class ToolMemory {
   confluenceResources = new Set<string>()
   nextConfluencePages = new Map<string, { id: string; continuation: ConfluenceContinuation }>()
   confluenceQuestion?: ConfluenceQuestion
-  confluenceUndo?: ConfluenceUndo
 
   /** A question starts: what the last one's results granted is forgotten. */
   startQuestion(): void {

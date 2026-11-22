@@ -21,7 +21,6 @@ KEEP PAGES UP TO DATE
 • Compare pages and spot what's out of date.
 • Replace exact text, rename pages, add labels, and post comments and replies.
 • Create child pages, move or copy pages, and move a page to the trash after you confirm.
-• Undo the last edit from the chat.
 
 BRING IN THE WEB
 • Ask about any open tab, add several tabs to one question, or search the web.

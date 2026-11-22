@@ -19,7 +19,6 @@ import type { Mode } from '@cofun/agent/mode'
 import { track } from '../analytics'
 import type { AttachmentUpload } from '../confluence/attachments'
 import { activeTab, confluenceTabAt } from '../confluence/tab'
-import type { ConfluenceUndo } from '../confluence/undo'
 import { titleFor, type Session, type SessionStore } from '../sessions'
 import { currentTabNote } from '../tools/current'
 import { ToolMemory } from '../tools/memory'
@@ -165,7 +164,6 @@ export class ChatSession {
     saved?: Session,
   ) {
     this.agent = new CopilotAgent(panel.agent, new ToolMemory(), saved?.messages, saved?.compaction)
-    this.memory.confluenceUndo = saved?.undo
     this.titled = saved?.titledByModel ?? false
     this.snapshot = {
       id: saved?.id,
@@ -223,8 +221,6 @@ export class ChatSession {
       createdAt: Date.now(),
     })
     if (this.snapshot.id !== session.id) this.update({ id: session.id })
-    const originalUndo = this.memory.confluenceUndo
-    let undoCleared = false
     const captured = activeTab().catch(() => undefined)
     const tab = captured.then((at) => at && confluenceTabAt(at))
     // Whether the question's tab is a Confluence page, for the model: read from the same capture as the tools.
@@ -234,16 +230,6 @@ export class ChatSession {
       tab: tab.catch(() => undefined),
       attachment: q.attachment,
       nextLabel: 0,
-      beforeWrite: async () => {
-        await this.saving
-        if (session.updatedAt !== undefined && originalUndo && !undoCleared) {
-          const revision = await this.panel.store.clearUndo(session.id, session.updatedAt)
-          if (revision === undefined)
-            throw new Error('This chat changed in another window. Reopen it before making changes.')
-          session.updatedAt = revision
-          undoCleared = true
-        }
-      },
     }
 
     // Where this question's reply goes in the list.
@@ -426,10 +412,7 @@ export class ChatSession {
       // done again when the session is continued.
       if (conversation) {
         const messages = conversation
-        const undo = this.memory.confluenceUndo
-        this.saving = this.saving.then(() =>
-          this.save(session, messages, reply, undo, undo !== originalUndo, compaction),
-        )
+        this.saving = this.saving.then(() => this.save(session, messages, reply, compaction))
         // Once, after the first question answered; not for a chat the user left meanwhile.
         if (answered && !this.titled && !this.left) {
           this.titled = true
@@ -496,14 +479,7 @@ export class ChatSession {
   }
 
   /** Saves the session after a question; `reply` is the place of the question's reply in the list. Never rejects. */
-  private async save(
-    session: SavedAs,
-    messages: HistoryMessage[],
-    reply: number,
-    undo: ConfluenceUndo | undefined,
-    verifiedNewUndo: boolean,
-    compaction?: Compaction,
-  ) {
+  private async save(session: SavedAs, messages: HistoryMessage[], reply: number, compaction?: Compaction) {
     try {
       const { id, createdAt, updatedAt: loaded } = session
       if (this.panel.deleted.has(id)) return
@@ -516,13 +492,9 @@ export class ChatSession {
           updatedAt: Math.max(Date.now(), (loaded ?? 0) + 1),
           messages,
           compaction,
-          undo,
         },
         loaded,
-        verifiedNewUndo,
       )
-      if (saved.id !== id && !verifiedNewUndo && this.memory.confluenceUndo === undo)
-        this.memory.confluenceUndo = undefined
       session.id = saved.id
       session.updatedAt = saved.updatedAt
       if (saved.id !== id)
