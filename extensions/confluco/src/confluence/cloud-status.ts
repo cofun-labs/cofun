@@ -3,7 +3,6 @@ import { z } from '../zod'
 import { cloudPageLink } from './cloud'
 import { cloudRevision } from './cloud-writes'
 import { spaceKey } from './navigation'
-import type { PageTrashUndo } from './page-status'
 import { requestedReference } from './page-writes'
 import { pageReference, type PageReference } from './references'
 import { getConfluence, refuse, restoreCloudPage, verificationFailed, type ConfluenceTab } from './tab'
@@ -30,17 +29,10 @@ async function readState(tab: ConfluenceTab, ref: PageReference, signal?: AbortS
   return parsed.data
 }
 
-export async function prepareCloudRestore(
-  tab: ConfluenceTab,
-  targetUrl: string | undefined,
-  signal?: AbortSignal,
-  undo?: PageTrashUndo,
-) {
-  const ref = undo?.page ?? requestedReference(tab, targetUrl)
+export async function prepareCloudRestore(tab: ConfluenceTab, targetUrl: string | undefined, signal?: AbortSignal) {
+  const ref = requestedReference(tab, targetUrl)
   if (!ref) refuse('Use the canonical link of the trashed page to restore it.')
   const page = await readState(tab, ref, signal)
-  if (undo && (page.status !== 'trashed' || page.version.number !== undo.version))
-    refuse('The page state changed after the last trash action. Review the page before restoring it.')
   const response = await getConfluence(tab, 'spaces/' + page.spaceId, {}, signal, 'cloud-v2')
   const space = spaceSchema.safeParse(response.data)
   if (!space.success || space.data.id !== page.spaceId)

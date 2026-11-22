@@ -64,31 +64,27 @@ it('[UC-CONFLUCO-PANEL-005-S05] expires full tool results whether or not the cha
   expect(await store.get('chat')).toMatchObject({ id: 'chat' })
 })
 
-it('[@no-uc:data] never restores a retired Confluence undo when a stale panel forks its chat', async () => {
-  const first = new SessionStore('user_confluence_undo_revision')
-  const second = new SessionStore('user_confluence_undo_revision')
-  const draft = {
-    id: 'confluence-undo',
-    title: 'Synthetic chat',
-    createdAt: 10,
-    updatedAt: 11,
-    messages: [{ role: 'user', text: 'Edit a page.' }] satisfies HistoryMessage[],
-    compaction: { firstKept: 1, summary: 'The user asked to edit a page.' },
-    undo: {
-      page: { instance: 'https://wiki.example.test/kb', id: '42' },
-      version: 2,
-      before: 'Old',
-      after: 'New',
-    },
-  }
-  await first.save(draft)
-  const stale = await second.get(draft.id)
-  if (!stale || stale === 'unreadable') throw new Error('Expected a saved chat')
-  await first.clearUndo(draft.id, draft.updatedAt)
-  const fork = await second.save({ ...stale, updatedAt: 12 }, stale.updatedAt)
-  expect(fork.id).not.toBe(draft.id)
-  expect(await second.get(fork.id)).not.toHaveProperty('undo')
-  expect(await first.get(draft.id)).not.toHaveProperty('undo')
-  expect(await first.get(draft.id)).toMatchObject({ compaction: draft.compaction })
-  expect(await second.get(fork.id)).toMatchObject({ compaction: draft.compaction })
+it('[@no-uc:data] opens a chat saved with the undo record of Confluco 0.1.0', async () => {
+  const store = new SessionStore('user_old_undo')
+  const messages = [{ role: 'user', text: 'Edit a page.' }] satisfies HistoryMessage[]
+  await store.save({ id: 'old-undo', title: 'Synthetic chat', createdAt: 10, updatedAt: 11, messages })
+  // As 0.1.0 stored it: the latest edit's reversal, kept with the conversation.
+  const undo = { page: { instance: 'https://wiki.example.test/kb', id: '42' }, version: 2, before: 'Old', after: 'New' }
+  await new Promise<void>((resolve, reject) => {
+    const open = indexedDB.open('confluco-chats-user_old_undo')
+    open.onerror = () => reject(open.error)
+    open.onsuccess = () => {
+      const db = open.result
+      const tx = db.transaction('messages', 'readwrite')
+      tx.objectStore('messages').put({ id: 'old-undo', messages, undo })
+      tx.oncomplete = () => {
+        db.close()
+        resolve()
+      }
+      tx.onerror = () => reject(tx.error)
+    }
+  })
+  const opened = await store.get('old-undo')
+  expect(opened).toMatchObject({ id: 'old-undo', messages })
+  expect(opened).not.toHaveProperty('undo')
 })

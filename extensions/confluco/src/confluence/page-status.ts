@@ -23,13 +23,6 @@ const pageState = publishedPage.extend({
 })
 type PageState = z.output<typeof pageState>
 export type PageStatusRequest = { action: 'trash' | 'restore'; targetUrl?: string }
-export const pageTrashUndo = z.strictObject({
-  kind: z.literal('trash'),
-  page: pageReference,
-  version,
-  trashDate: trashDate.optional(),
-})
-export type PageTrashUndo = z.output<typeof pageTrashUndo>
 
 const trashEnglish =
   /^(?:please\s+)?(?:trash\s+(?:page\s+)?(?:this\s+page|(?<target>https?:\/\/[^\s]+?))|move\s+this\s+page\s+to\s+(?:the\s+)?trash)[.!]?$/iu
@@ -78,33 +71,23 @@ export async function preparePageStatus(
   request: PageStatusRequest,
   target: ConfluenceTab | undefined,
   signal?: AbortSignal,
-  undo?: PageTrashUndo,
 ) {
   const tab = requireTab(target)
-  const ref = undo?.page ?? requestedReference(tab, request.targetUrl)
+  const ref = requestedReference(tab, request.targetUrl)
   if (!ref && request.action === 'restore') refuse('Use the canonical link of the trashed page to restore it.')
   const page = await readState(tab, ref, signal)
-  if (
-    undo &&
-    (page.status !== 'trashed' ||
-      page.version.number !== undo.version ||
-      (undo.trashDate !== undefined && page.metadata?.trashdate !== undo.trashDate))
-  )
-    refuse('The page state changed after the last trash action. Review the page before restoring it.')
   if (request.action === 'trash' && page.status === 'current') await requireEligibleTrash(tab, page, signal)
   const link = pageLink(tab.instance, page)
   const name = `"${page.title}" (${link.url}) in space ${page.space.key}`
-  const reviewAccess = request.action === 'restore' && undo?.trashDate === undefined
   return {
     tab,
     ref: link.ref,
     page,
     action: request.action,
-    reviewAccess,
     preview:
       request.action === 'trash'
         ? `Move ${name} to the recoverable trash. Confluence restores pages at the space root and may move child pages that your account cannot see.`
-        : `Restore ${name} from the trash at the space root.${reviewAccess ? ' Review who can access the page there before allowing this change.' : ''}`,
+        : `Restore ${name} from the trash at the space root. Review who can access the page there before allowing this change.`,
   }
 }
 
@@ -130,7 +113,6 @@ export async function applyPageStatus(plan: Awaited<ReturnType<typeof preparePag
       status: desired,
       version: current.version.number,
       changed: false,
-      trashDate: undefined,
     }
   const nextVersion = action === 'restore' ? current.version.number + 1 : current.version.number
   if (nextVersion > 2_147_483_647) refuse('This Confluence page cannot be advanced to another version.')
@@ -158,10 +140,6 @@ export async function applyPageStatus(plan: Awaited<ReturnType<typeof preparePag
     status: desired,
     version: verifiedVersion,
     changed: true,
-    trashDate:
-      action === 'trash' && verified.metadata?.trashdate !== current.metadata?.trashdate
-        ? verified.metadata?.trashdate
-        : undefined,
     ...(action === 'restore' && { atSpaceRoot: verified.ancestors.length === 0 }),
   }
 }

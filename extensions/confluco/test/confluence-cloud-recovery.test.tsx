@@ -74,41 +74,6 @@ it.each(['edit', 'newer', 'ambiguous', 'signed out', 'uncertain'] as const)(
   },
 )
 
-it.each([false, true])(
-  '[UC-CONFLUCO-CONFLUENCE-009-S06] [UC-CONFLUCO-CONFLUENCE-009-S07] undoes the verified Cloud edit unless its version advanced (%s)',
-  async (newer) => {
-    const { browser, user } = await workspace()
-    let current = page
-    browser.confluenceResponse = (url, init) => {
-      const at = new URL(url)
-      if (init?.method === 'PUT') {
-        const body = JSON.parse(String(init?.body))
-        current = { ...page, body: { storage: { value: body.body.value } }, version: { number: body.version.number } }
-        return Response.json(current)
-      }
-      if (at.searchParams.has('version')) {
-        expect(at.searchParams.get('version')).toBe('2')
-        return Response.json({ ...page, status: 'historical', parentId: '0' })
-      }
-      return Response.json(current)
-    }
-    browser.ai.script.push({ toolCalls: [call('edit_page')] }, { reply: 'Edited.' })
-    await ask(user, 'Replace "Before" with "After" on this page')
-    expect(await screen.findByText('Edited.')).toBeVisible()
-    if (newer) current = { ...current, version: { number: 4 } }
-    browser.ai.script.push({ toolCalls: [call('undo_last_change')] }, { reply: 'Undo checked.' })
-    await ask(user, 'Undo the last operation')
-    await screen.findByRole('button', { name: 'Send' })
-    expect(writes(browser)).toHaveLength(newer ? 1 : 2)
-    if (newer) expect(screen.getAllByText(/changed since the last edit/).length).toBeGreaterThan(0)
-    else {
-      expect(current.body.storage.value).toBe(text)
-      expect(current.version.number).toBe(4)
-      expect(toolText(browser)).toContain('"version":4,"changed":true,"bodyVerified":true')
-    }
-  },
-)
-
 it.each([
   'restore',
   'redirect',
@@ -182,43 +147,3 @@ it.each([
     if (outcome === 'uncertain') expect(screen.getAllByText(/Check the page or space trash/).length).toBeGreaterThan(0)
   },
 )
-
-it('[UC-CONFLUCO-CONFLUENCE-012-S02] confirms undoing the last Cloud trash action in the same chat', async () => {
-  const { browser, user } = await workspace()
-  let current = page
-  const empty = { results: [] }
-  const access = { restrictions: { user: empty, group: empty } }
-  browser.confluenceResponse = (url, init) => {
-    const at = new URL(url)
-    if (init?.method === 'DELETE') {
-      current = { ...page, status: 'trashed' }
-      return new Response(null, { status: 204 })
-    }
-    if (at.pathname.endsWith('/ancestors')) return Response.json({ results: [{ id: '10', type: 'page' }] })
-    if (at.pathname.endsWith('/direct-children')) return Response.json(empty)
-    if (at.pathname.endsWith('/restriction/byOperation')) return Response.json({ read: access, update: access })
-    if (at.pathname === '/wiki/api/v2/spaces/17') return Response.json({ id: '17', key: 'TEST' })
-    if (at.pathname === '/wiki/pages/restoretrashitem.action')
-      return new Response(
-        '<form method="post" action="/wiki/pages/dorestoretrashitem.action"><input name="key" value="TEST"><input name="contentId" value="42"><input name="atl_token" value="synthetic-token"><input name="confirm" value="OK"></form>',
-        { headers: { 'Content-Type': 'text/html' } },
-      )
-    if (init?.method === 'POST') {
-      current = { ...page, parentId: '0' }
-      return new Response('<p>Restored</p>', { headers: { 'Content-Type': 'text/html' } })
-    }
-    expect(at.pathname).toBe(endpoint)
-    return Response.json(current)
-  }
-  for (const [tool, prompt] of [
-    ['trash_page', 'Trash this page'],
-    ['undo_last_change', 'Undo the last operation'],
-  ]) {
-    browser.ai.script.push({ toolCalls: [call(tool)] }, { reply: tool + ' complete.' })
-    await ask(user, prompt)
-    await user.click(await screen.findByRole('button', { name: 'Allow' }))
-    expect(await screen.findByText(tool + ' complete.')).toBeVisible()
-  }
-  expect(writes(browser).map(({ init }) => init?.method)).toEqual(['DELETE', 'POST'])
-  expect(current.status).toBe('current')
-})

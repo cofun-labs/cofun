@@ -1,21 +1,11 @@
 // Published Cloud edits follow the service's draft reconciliation behavior.
-import { cloudPageLink, fetchCloudPage } from './cloud'
-import { cloudReference, cloudRevision, readCloudRevision } from './cloud-writes'
-import {
-  requireEditPassages,
-  requestedReference,
-  unverifiedWrite,
-  type PageEditRequest,
-  type PageEditUndo,
-} from './page-writes'
+import { cloudPageLink } from './cloud'
+import { cloudRevision, readCloudRevision } from './cloud-writes'
+import { requireEditPassages, requestedReference, unverifiedWrite, type PageEditRequest } from './page-writes'
 import { replaceStorageText } from './storage-edit'
 import { refuse, updateCloudPage, type ConfluenceTab } from './tab'
 import { z } from '../zod'
 
-const historical = cloudRevision.extend({
-  status: z.enum(['current', 'historical']),
-  version: cloudRevision.shape.version.extend({ hidden: z.boolean().optional() }),
-})
 type Revision = z.output<typeof cloudRevision>
 
 function sameLocation(left: Pick<Revision, 'id' | 'title' | 'spaceId' | 'parentId'>, right: Revision) {
@@ -74,32 +64,4 @@ export async function prepareCloudPageEdit(request: PageEditRequest, tab: Conflu
   const page = await readCloudRevision(tab, requestedReference(tab, request.targetUrl), signal)
   const value = replaceStorageText(page.body.storage.value, request.before, request.after)
   return preparedEdit(tab, page, value, request.before, request.after)
-}
-
-export async function prepareCloudUndoEdit(record: PageEditUndo, tab: ConfluenceTab, signal?: AbortSignal) {
-  const ref = cloudReference(tab, record.page.id)
-  if (ref.instance !== record.page.instance) refuse('The last edit belongs to a different Confluence site.')
-  const current = await readCloudRevision(tab, ref, signal)
-  if (current.version.number !== record.version)
-    refuse('The page has changed since the last edit. Review its version history to decide how to undo it.')
-  const previous = await fetchCloudPage(
-    tab,
-    ref,
-    historical,
-    {
-      version: String(record.version - 1),
-      'body-format': 'storage',
-    },
-    signal,
-  )
-  if (
-    previous.version.hidden ||
-    previous.version.number !== record.version - 1 ||
-    // Cloud's historical parentId does not reliably describe the page's published location.
-    previous.title !== current.title ||
-    previous.spaceId !== current.spaceId ||
-    replaceStorageText(previous.body.storage.value, record.before, record.after) !== current.body.storage.value
-  )
-    refuse('The earlier version does not match the last edit. Review the page history before undoing.')
-  return preparedEdit(tab, current, previous.body.storage.value, record.after, record.before)
 }

@@ -56,13 +56,12 @@ const modelResults = (browser: WorkspaceBrowser) =>
 describe('trash and restore a published page', () => {
   const trash = { name: 'trash_page', arguments: '{}' }
   const restore = { name: 'restore_page', arguments: '{}' }
-  const undoTrash = { name: 'undo_last_change', arguments: '{}' }
   const trashed = { ...parent, status: 'trashed', ancestors: [] }
   const restored = { ...parent, ancestors: [] }
   const empty = { results: [] }
   const unrestricted = { restrictions: { user: empty, group: empty } }
   const restoreCommand = 'Restore page ' + pageUrl(parent.id)
-  const usePage = (browser: WorkspaceBrowser, initial = parent, dated = true) => {
+  const usePage = (browser: WorkspaceBrowser, initial = parent) => {
     let page: typeof parent & { metadata?: { trashdate: string } } = initial
     browser.confluenceResponse = (url, init) => {
       const endpoint = new URL(url)
@@ -74,7 +73,7 @@ describe('trash and restore a published page', () => {
         expect(screen.getByText(/Move "Parent fixture".*to the recoverable trash/)).toBeVisible()
         expect(screen.queryByRole('img', { name: 'Waiting for your OK' })).not.toBeInTheDocument()
         expect(endpoint.search).toBe('?status=current')
-        page = dated ? { ...trashed, metadata: { trashdate: '2026-01-01T00:00:00.000Z' } } : trashed
+        page = { ...trashed, metadata: { trashdate: '2026-01-01T00:00:00.000Z' } }
         return new Response(null, { status: 204 })
       }
       if (init?.method === 'PUT') {
@@ -102,46 +101,16 @@ describe('trash and restore a published page', () => {
     expect(browser.workspaceRequests.at(-1)?.init?.method).toBe('GET')
   })
 
-  it.each([
-    [false, false],
-    [true, true],
-    [true, false],
-  ])('[UC-CONFLUCO-CONFLUENCE-012-S02] restores the same page (undo %s, known trash date %s)', async (undo, dated) => {
+  it('[UC-CONFLUCO-CONFLUENCE-012-S02] restores the same page by its link once the user allows it', async () => {
     const { browser, user } = await openPanel()
-    usePage(browser, undo ? parent : trashed, dated)
-    if (undo) {
-      browser.ai.script.push({ toolCalls: [trash] }, { reply: 'Moved to trash.' })
-      await ask(user, 'Trash this page')
-      await user.click(await screen.findByRole('button', { name: /^Allow$/ }))
-      await answered()
-      await user.click(screen.getByRole('button', { name: 'New chat' }))
-      await user.click(screen.getByRole('button', { name: 'Chats' }))
-      await user.click(await screen.findByRole('button', { name: /Trash this page/ }))
-      await screen.findByRole('textbox', { name: 'Message' })
-    }
-    browser.ai.script.push({ toolCalls: [undo ? undoTrash : restore] }, { reply: 'The same page is published again.' })
-    await ask(user, undo ? '撤销上次操作' : restoreCommand)
-    if (!dated) await user.click(await screen.findByRole('button', { name: /^Allow$/ }))
+    usePage(browser, trashed)
+    browser.ai.script.push({ toolCalls: [restore] }, { reply: 'The same page is published again.' })
+    await ask(user, restoreCommand)
+    await user.click(await screen.findByRole('button', { name: /^Allow$/ }))
     expect(await screen.findByText('The same page is published again.')).toBeVisible()
-    expect(writes(browser)).toHaveLength(undo ? 2 : 1)
+    expect(writes(browser)).toHaveLength(1)
     expect(modelResults(browser)).toContain('"status":"current","version":2,"changed":true,"atSpaceRoot":true')
     expect(browser.workspaceRequests.at(-1)?.init?.method).toBe('GET')
-  })
-
-  it('[UC-CONFLUCO-CONFLUENCE-012-S03] refuses to undo a newer trash operation on the same version', async () => {
-    const { browser, user } = await openPanel()
-    usePage(browser)
-    browser.ai.script.push({ toolCalls: [trash] }, { reply: 'Moved to trash.' })
-    await ask(user, 'Trash this page')
-    await user.click(await screen.findByRole('button', { name: /^Allow$/ }))
-    await answered()
-    browser.confluenceResponse = () =>
-      Response.json({ ...trashed, metadata: { trashdate: '2026-01-02T00:00:00.000Z' } })
-    browser.ai.script.push({ toolCalls: [undoTrash] })
-    await ask(user, '撤销上次操作')
-    await answered()
-    expect(screen.getAllByText(/page state changed after the last trash action/).length).toBeGreaterThan(0)
-    expect(writes(browser)).toHaveLength(1)
   })
 
   it('[UC-CONFLUCO-CONFLUENCE-012-S03] leaves a page trashed if the user declines restoration by link', async () => {
@@ -677,101 +646,6 @@ describe('edit published page text', () => {
     expect(screen.getAllByText(/Sign in to Confluence in the page tab/).length).toBeGreaterThan(0)
     expect(browser.workspaceRequests.at(-1)?.init?.method).toBe('PUT')
     expect(writes(browser)).toHaveLength(1)
-  })
-
-  const undoCall = { name: 'undo_last_change', arguments: '{}' }
-  const historical = { ...original, status: 'historical' }
-
-  it('[UC-CONFLUCO-CONFLUENCE-009-S06] undoes the last edit after reopening its conversation', async () => {
-    const { browser, user } = await openPanel()
-    let published = original
-    browser.confluenceResponse = (url, init) => {
-      const endpoint = new URL(url)
-      if (endpoint.searchParams.get('version') === '2') return Response.json(historical)
-      if (init?.method === 'PUT') {
-        if (published.version.number === 2) published = updated
-        else {
-          expect(screen.getByText(/Undo the edit on "Parent fixture".*version 3/)).toBeVisible()
-          expect(init.body).toEqual(
-            JSON.stringify({ type: 'page', title: original.title, version: { number: 4 }, body: original.body }),
-          )
-          published = { ...original, version: { number: 4 } }
-        }
-      }
-      return Response.json(published)
-    }
-    browser.ai.script.push({ toolCalls: [editCall] }, { reply: 'Edited the page.' })
-    await ask(user, edit)
-    await answered()
-    await user.click(screen.getByRole('button', { name: 'New chat' }))
-    await user.click(screen.getByRole('button', { name: 'Chats' }))
-    await user.click(await screen.findByRole('button', { name: /Replace "Status A & B"/ }))
-    browser.ai.script.push({ toolCalls: [undoCall] })
-    await ask(user, 'Summarize this page')
-    await answered()
-    expect(screen.getAllByText(/explicitly request undoing/).length).toBeGreaterThan(0)
-    expect(writes(browser)).toHaveLength(1)
-    browser.ai.script.push({ toolCalls: [undoCall] }, { reply: 'Restored the previous text.' })
-    await ask(user, '撤销上次操作')
-    expect(await screen.findByText('Restored the previous text.')).toBeVisible()
-    expect(writes(browser)).toHaveLength(2)
-    expect(modelResults(browser)).toContain('"version":4,"changed":true,"bodyVerified":true')
-  })
-
-  it.each([false, true])(
-    '[UC-CONFLUCO-CONFLUENCE-009-S07] refuses undo without a matching current edit (newer %s)',
-    async (newer) => {
-      const { browser, user } = await openPanel()
-      let written = false
-      let bumped = false
-      browser.confluenceResponse = (_url, init) => {
-        if (init?.method === 'PUT') written = true
-        return Response.json(bumped ? { ...updated, version: { number: 4 } } : written ? updated : original)
-      }
-      if (newer) {
-        browser.ai.script.push({ toolCalls: [editCall] }, { reply: 'Edited the page.' })
-        await ask(user, edit)
-        await answered()
-        bumped = true
-      }
-      browser.ai.script.push({ toolCalls: [undoCall] })
-      await ask(user, 'Undo the last operation')
-      await answered()
-      const error = newer ? /page has changed since the last edit/ : /last workspace change.*can be undone/
-      expect(screen.getAllByText(error).length).toBeGreaterThan(0)
-      expect(writes(browser)).toHaveLength(newer ? 1 : 0)
-    },
-  )
-
-  it('[@no-uc:data] clears the saved undo before a later write can outlive the open chat', async () => {
-    const { browser, user } = await openPanel()
-    let edited = false
-    const dispatched = pendingResponse<void>()
-    const response = pendingResponse()
-    const created = { ...child, body: { storage: storage('<p></p>') } }
-    browser.confluenceResponse = (url, init) => {
-      if (init?.method === 'PUT') edited = true
-      if (init?.method === 'POST') {
-        dispatched.release()
-        return response.promise
-      }
-      return Response.json(new URL(url).pathname === contentPath ? { results: [] } : edited ? updated : original)
-    }
-    browser.ai.script.push({ toolCalls: [editCall] }, { reply: 'Edited the page.' })
-    await ask(user, edit)
-    await answered()
-    browser.ai.script.push({ toolCalls: [createCall] })
-    await ask(user, command)
-    await dispatched.promise
-    await user.click(screen.getByRole('button', { name: 'New chat' }))
-    response.release(Response.json(created))
-    await user.click(screen.getByRole('button', { name: 'Chats' }))
-    await user.click(await screen.findByRole('button', { name: /Replace "Status A & B"/ }))
-    browser.ai.script.push({ toolCalls: [undoCall] })
-    await ask(user, 'Undo the last operation')
-    await answered()
-    expect(screen.getAllByText(/last workspace change.*can be undone/).length).toBeGreaterThan(0)
-    expect(writes(browser)).toHaveLength(2)
   })
 })
 
