@@ -175,7 +175,9 @@ it.each(['add', 'remove'])(
     await ask(user, adding ? 'Add label sample-label to this page' : 'Remove label sample-label from this page')
     await screen.findByRole('button', { name: 'Send' })
     expect(screen.getAllByText(/Check the page before trying again/).length).toBeGreaterThan(0)
+    // The preview's read of the page, the label checks, then the one write: never a second.
     expect(browser.workspaceRequests.map(({ init }) => init?.method)).toEqual([
+      'GET',
       'GET',
       'GET',
       'GET',

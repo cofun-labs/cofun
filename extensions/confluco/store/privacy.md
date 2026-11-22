@@ -85,3 +85,9 @@ All three certifications are checked: no selling or transfer of user data to thi
 ```text
 https://github.com/cofun-labs/cofun/blob/main/extensions/confluco/PRIVACY.md
 ```
+
+## For the next version
+
+- Single purpose: "changes them on the user's explicit request" becomes "changes them when the user asks for a change, without asking first except to move a page to the trash".
+- Permission justification for scripting: "when the user asks for a change in so many words, change pages" becomes "change pages, as the assistant chooses from the user's question, ".
+- Data usage, "Website content": "A change the user asks for, and a file the user chose to upload after confirming, go to their Confluence site" becomes "The changes the assistant makes go to their Confluence site".

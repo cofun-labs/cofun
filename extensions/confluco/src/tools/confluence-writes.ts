@@ -5,7 +5,13 @@
 import type { ToolContext } from '@cofun/agent'
 import { prepareCloudPageEdit } from '../confluence/cloud-edits'
 import { prepareCloudOrganization, prepareCloudTrash } from '../confluence/cloud-organization'
-import { applyCloudLabel, prepareCloudComment, prepareCloudPageWrite } from '../confluence/cloud-writes'
+import { cloudPageLink } from '../confluence/cloud'
+import {
+  applyCloudLabel,
+  prepareCloudComment,
+  prepareCloudPageWrite,
+  readCloudLocation,
+} from '../confluence/cloud-writes'
 import { applyComment, prepareComment } from '../confluence/comments'
 import { applyLabel, labelName } from '../confluence/labels'
 import { applyOrganization, prepareOrganization, type OrganizationRequest } from '../confluence/page-organization'
@@ -20,7 +26,13 @@ import {
   title,
   type PageWriteRequest,
 } from '../confluence/page-writes'
-import { pageReference, type PageReference } from '../confluence/references'
+import {
+  fetchPublishedPage,
+  pageLink,
+  pageReference,
+  publishedPage,
+  type PageReference,
+} from '../confluence/references'
 import { captureConfluenceTab, refuse, type ConfluenceTab } from '../confluence/tab'
 import { requirePage } from './confluence'
 import { target } from './target'
@@ -323,10 +335,15 @@ const changeLabel = change(
     label: labelName.describe('The label, without a prefix or spaces.'),
     page,
   }),
-  async ({ action, label, page }, { memory }, tab) => {
-    const request = { action, label: label.toLowerCase(), page: resolvePage(memory, tab, page) }
+  async ({ action, label, page }, { memory }, tab, signal) => {
+    // The card names the page, which may not be the open one; the change goes to that same page.
+    const at = resolvePage(memory, tab, page)
+    const link = tab.instance.cloud
+      ? cloudPageLink(tab, await readCloudLocation(tab, at, signal))
+      : pageLink(tab.instance, await fetchPublishedPage(tab, at, publishedPage, '', signal))
+    const request = { action, label: label.toLowerCase(), page: link.ref }
     return {
-      preview: `${action === 'add' ? 'Add' : 'Remove'} the label "${request.label}" ${action === 'add' ? 'to' : 'from'} the page.`,
+      preview: `${action === 'add' ? 'Add' : 'Remove'} the label "${request.label}" ${action === 'add' ? 'to' : 'from'} "${link.title}" (${link.url}).`,
       async apply(signal) {
         const data = tab.instance.cloud
           ? await applyCloudLabel(request, tab, signal)

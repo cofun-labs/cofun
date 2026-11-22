@@ -336,6 +336,8 @@ it('[UC-CONFLUCO-CONFLUENCE-006-S07] verifies each of several label changes on i
     ['DELETE', '/kb/rest/api/content/43/label'],
   ])
   expect(labels).toEqual({ '42': [label], '43': [] })
+  // Each card names the page it changes, which need not be the open one.
+  expect(screen.getByText(/Remove the label "old-marker" from "Other page"/)).toBeInTheDocument()
   expect(toolText(browser)).toContain('"present":true,"changed":true')
   expect(toolText(browser)).toContain('"present":false,"changed":true')
 })
