@@ -62,7 +62,7 @@ repo_json="$(gh api "$api")"
 # merged. Auto-merge is allowed because `gh pr merge` needs it to add a PR to the
 # merge queue.
 want_options='{
-  "description": "AI side panels for Chrome: Notico for Notion, Confluco for Confluence. Chrome extensions and the Cloudflare Worker they share.",
+  "description": "AI side panels for Chrome: Notico for Notion, Confluco for Confluence, Webco for any web page. Chrome extensions and the Cloudflare Worker they share.",
   "homepage": "https://cofun.cc",
   "allow_squash_merge": true,
   "allow_merge_commit": false,

@@ -9,7 +9,7 @@ import { type Browser, type Target, sleep, until } from './cdp'
 export const EXTENSIONS = {
   notico: { id: 'moblfnjjebknafkgoifncombfnbfghom', name: 'Notico: AI copilot for Notion' },
   confluco: { id: 'eolgkcpoohaeaedpcnljkldkpnjcdemm', name: 'Confluco: AI copilot for Confluence' },
-  webco: { id: 'lfdnapbmoeabbmmfghiajdneabdblckk', name: 'Webco: AI copilot for any web page' },
+  webco: { id: 'ohopjjnpfepkmkcfccaondkhggegbfeh', name: 'Webco: AI copilot for any web page' },
 } as const
 
 export type ExtensionSlug = keyof typeof EXTENSIONS

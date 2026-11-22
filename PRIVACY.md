@@ -4,7 +4,7 @@ Cofun makes AI side panels for Chrome, each one an extension for a different kin
 
 - [Notico](extensions/notico/PRIVACY.md), for Notion
 - [Confluco](extensions/confluco/PRIVACY.md), for Confluence
-- [Webco](extensions/webco/PRIVACY.md), for any web page (not on the Chrome Web Store yet)
+- [Webco](extensions/webco/PRIVACY.md), for any web page
 
 This page describes the worker deployed from `worker/` and the extensions built from this repository with their committed configuration. If you build an extension against your own deployment, the hosts are the ones you configure.
 
