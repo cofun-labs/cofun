@@ -806,7 +806,8 @@ export class NotionClient {
         throw new NotionError('outcome_unknown', DUPLICATE_UNKNOWN, { cause: err, stopsQuestion: err.stopsQuestion })
       throw err
     }
-    if (typeof taskId !== 'string') throw new NotionError('notion_error', 'Notion did not start copying the page.')
+    // Notion took the request but answered in a shape we don't know: the copy may have been started.
+    if (typeof taskId !== 'string') throw new NotionError('outcome_unknown', DUPLICATE_UNKNOWN)
     const { firstMs, maxMs, polls } = DUPLICATE_POLLING
     // Only a check that stalls meets this: all of them, at their longest wait, with room to answer.
     const deadline = Date.now() + 2 * polls * maxMs

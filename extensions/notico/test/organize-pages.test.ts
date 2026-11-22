@@ -365,6 +365,15 @@ describe('duplicating pages', () => {
     }
   })
 
+  it('[@no-uc:notion-safety] a copy Notion took without a task id may have been made: says so, and checks on nothing', async () => {
+    const tab = open(workspace())
+    tab.respond('enqueueTask', 200, {})
+    const err = await notionError(chat.run(duplicatePage, { page: PLAN }))
+    expect([err.code, err.mayHaveChanged]).toEqual(['outcome_unknown', true])
+    expect(err.message).toContain('it may still appear')
+    expect(sentTo(tab, 'getTasks')).toHaveLength(0)
+  })
+
   it('[@no-uc:notion-safety] gives up early on a copy that keeps reporting an error, with what Notion said', async () => {
     const ws = workspace()
     ws.stuckTask = 'Invalid input.'
