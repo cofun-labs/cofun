@@ -25,8 +25,6 @@ Key constraints:
 | UC-NOTICO-CHAT-001-S08 | P2 | ✅ | Given a session with no question yet; when the user picks a suggestion; then it is in the message box, not sent, and the user can change it before sending; one that ends in "…" leaves the cursor where the "…" was. |
 | UC-NOTICO-CHAT-001-S20 | P1 | ✅ | Given a new chat; when the panel shows it; then its suggestions fit what the question goes with: a page by its title, with ones that change it in Edit and none in Read only; a database, about its entries; with the page taken off, the whole workspace, and back to the page's suggestions once it is added again; or, on another site, reading the page in the tab (on a YouTube video, summarizing it and listing its moments with their times) and searching the web (only searching, when Notico can't read the tab), with a note that the workspace needs a Notion page in the tab, and how to save the page, or notes on the video, to Notion; and neither the AI nor Notion is asked anything. |
 | UC-NOTICO-CHAT-001-S16 | P1 | ✅ | Given a reply written in Markdown; when it is shown in the side panel; then it reads formatted (headings, emphasis, lists, tables, code, quotes, links), the user's question is shown as typed, and the reply's Copy button puts its Markdown on the clipboard, without its tool calls or what it read and changed. |
-| UC-NOTICO-CHAT-001-S17 | P0 | ✅ | Given a reply with HTML and non-web links in it; when it is shown; then the HTML is shown as text, and only its web links can be followed. |
-| UC-NOTICO-CHAT-001-S18 | P0 | ✅ | Given a reply with an image in it; when it is shown; then the image is not loaded, and its description links to it instead. |
 
 ### ai-e2e
 

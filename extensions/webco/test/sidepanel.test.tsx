@@ -88,6 +88,66 @@ describe('asking the AI', () => {
   })
 })
 
+describe('a formatted reply', () => {
+  it('[UC-WEBCO-CHAT-001-S17] HTML in a reply is shown as text, and only web links can be followed', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push({
+      reply:
+        'Look: <b onclick="alert(1)">bold</b>\n\n[run](javascript:alert(1)), [mail](mailto:a@example.com), and [the docs](https://docs.example.com "Click me")',
+    })
+
+    await ask(user, 'Show me')
+    await screen.findByText(/Look:/)
+    await answered()
+
+    const reply = screen.getByText(/Look:/)
+    expect(reply).toHaveTextContent('Look: <b onclick="alert(1)">bold</b>')
+    expect(reply.querySelector('b')).toBeNull()
+    // Links that are not http or https are shown as their text, not as links.
+    expect(screen.getByText('run')).toBeVisible()
+    expect(screen.queryByRole('link', { name: 'run' })).toBeNull()
+    expect(screen.getByText('mail')).toBeVisible()
+    expect(screen.queryByRole('link', { name: 'mail' })).toBeNull()
+    // A web link opens in a new tab, with nothing else the model wrote on it.
+    const docs = screen.getByRole('link', { name: 'the docs' })
+    expect(docs).toHaveAttribute('href', 'https://docs.example.com')
+    expect(docs).toHaveAttribute('target', '_blank')
+    expect(docs).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(docs).not.toHaveAttribute('title')
+  })
+
+  it('[UC-WEBCO-CHAT-001-S18] an image in a reply is not loaded: its description links to it instead', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push({ reply: 'Here is the chart: ![Sales by month](https://images.example.com/chart.png)' })
+
+    await ask(user, 'Show the chart')
+    await screen.findByText(/Here is the chart/)
+    await answered()
+
+    expect(within(screen.getByText(/Here is the chart/)).queryByRole('img')).toBeNull()
+    // Nothing on the page asks for the image's address.
+    expect(document.querySelector('[src*="images.example.com"]')).toBeNull()
+    expect(screen.getByRole('link', { name: 'Sales by month' })).toHaveAttribute(
+      'href',
+      'https://images.example.com/chart.png',
+    )
+  })
+
+  it('[UC-WEBCO-CHAT-001-S18] an image inside a link is shown as its description, and the link goes where it says', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push({
+      reply: 'Status: [![Build passing](https://img.example.com/b.svg)](https://ci.example.com)',
+    })
+
+    await ask(user, 'Show the status')
+    await screen.findByText(/Status:/)
+    await answered()
+
+    expect(screen.getByRole('link', { name: 'Build passing' })).toHaveAttribute('href', 'https://ci.example.com')
+    expect(document.querySelector('[src*="img.example.com"], [href*="img.example.com"]')).toBeNull()
+  })
+})
+
 describe('sessions', () => {
   it.each([false, true])(
     '[UC-WEBCO-SESSION-001-S01][UC-WEBCO-SESSION-001-S06] a follow-up retains the earlier tools with reopen=%s',
