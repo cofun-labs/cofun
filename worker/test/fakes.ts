@@ -413,6 +413,8 @@ export class FakeWeb implements WebFetcher {
   readonly requests: Request[] = []
   /** When set, every request fails with this error, as an unreachable site's would. */
   failWith?: Error
+  /** Runs as each request arrives, for a test that changes what happens next while a page is read. */
+  during?: () => void
 
   /** Serves `page` at `url`: HTML by default. */
   serve(url: string, page: FakePage | string): this {
@@ -426,6 +428,7 @@ export class FakeWeb implements WebFetcher {
 
   async fetch(request: Request): Promise<Response> {
     this.requests.push(request)
+    this.during?.()
     if (this.failWith) throw this.failWith
     const page = this.pages.get(request.url)
     if (!page) return new Response('Not found', { status: 404, headers: { 'content-type': 'text/html' } })
