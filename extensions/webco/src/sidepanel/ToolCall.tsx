@@ -1,7 +1,7 @@
 import type { ConfirmationAnswer } from '@cofun/agent'
 import { memo, useState } from 'react'
 import type { Action } from '../tool'
-import { allowSite } from '@cofun/tools/tab'
+import { askToRead } from '@cofun/tools/tab'
 import { describeCall } from '../tools'
 import type { ShownTool } from './chat-session'
 import { Icon, type IconName } from './icons'
@@ -198,16 +198,7 @@ function AccessCard({
           disabled={inChrome}
           onClick={() => {
             setInChrome(true)
-            allowSite(origin).then(onAnswer, (err: unknown) => {
-              console.error('Could not ask Chrome for access to the site', err)
-              onAnswer(
-                new Error(
-                  'Chrome could not request access to the site, so nothing was read. ' +
-                    'The user can ask again. Do not request access again unless the user asks.',
-                  { cause: err },
-                ),
-              )
-            })
+            void askToRead(origin).then(onAnswer)
           }}
         >
           Allow

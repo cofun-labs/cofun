@@ -1,9 +1,10 @@
 // That Confluco wires in what every Cofun extension shares: the tools of @cofun/tools, offered to the
 // model and run with Confluco's name, and the "Ask Confluco" menu item that hands a selection to the
-// side panel, and the rules a reply is shown by (@cofun/reply). How they behave is verified once, in
+// side panel, the rules a reply is shown by (@cofun/reply), and how a tool call's card is answered
+// (@cofun/agent's ToolPrompts, and @cofun/tools's askToRead). How they behave is verified once, in
 // Webco (extensions/webco/test/).
 import '@testing-library/jest-dom/vitest'
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it } from 'vitest'
 import { DATA_LINE } from '@cofun/tools'
@@ -15,7 +16,7 @@ afterEach(closeBrowser)
 const ARTICLE = 'https://news.example.com/2026/rivers'
 const PAGE = 'https://tea.example/oolong'
 
-it('[@no-uc:wiring] the shared tools are offered and run, and "Ask Confluco" hands a selection to the panel, and a reply is shown by the shared rules, its HTML as text', async () => {
+it('[@no-uc:wiring] the shared tools are offered and run, and "Ask Confluco" hands a selection to the panel, a reply is shown by the shared rules, its HTML as text, and a site card is answered by them', async () => {
   const tab = new FakeTab(ARTICLE)
   tab.title = 'Rivers | News'
   tab.dom = webPage({ title: 'Rivers | News', main: '<p>Rivers are rising.</p>', url: ARTICLE })
@@ -73,4 +74,24 @@ it('[@no-uc:wiring] the shared tools are offered and run, and "Ask Confluco" han
   const results = sent.filter((m) => m.role === 'tool').map((m) => m.content)
   expect(results).toHaveLength(4)
   for (const result of results) expect(result?.startsWith(DATA_LINE + '\n')).toBe(true)
+
+  // A site the user has not allowed: the card's answer goes through the shared prompts, and when
+  // Chrome can't show its prompt, the model gets the shared answer.
+  tab.switchTab('https://other.example/page', 'Other')
+  const failed = Promise.reject(new Error('Synthetic Chrome prompt failure'))
+  failed.catch(() => {})
+  tab.promptOpen = failed
+  browser.ai.script.push(call('read_current_tab', {}), { reply: 'Chrome could not ask.' })
+  await user.type(screen.getByRole('textbox', { name: 'Message' }), 'And this one?')
+  await user.click(screen.getByRole('button', { name: 'Send' }))
+  const card = await screen.findByRole('group', { name: 'Allow Confluco to read other.example?' })
+  await user.click(within(card).getByRole('button', { name: 'Allow' }))
+  expect(await screen.findByText('Chrome could not ask.')).toBeVisible()
+  expect(tab.accessRequests).toEqual([['https://other.example/*']])
+  expect(
+    browser
+      .sentToModel()
+      .filter((m) => m.role === 'tool')
+      .at(-1)?.content,
+  ).toMatch(/^Chrome could not request access to the site, so nothing was read\./)
 })

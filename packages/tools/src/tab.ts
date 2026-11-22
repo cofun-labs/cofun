@@ -87,6 +87,22 @@ export function allowSite(origin: string): Promise<boolean> {
   return chrome.permissions.request({ origins: [pattern(origin)] })
 }
 
+/**
+ * allowSite, as a tool call's card answers the call with it: Chrome's yes or no, or, when Chrome could
+ * not ask, an error that tells the model nothing was read and not to ask again unless the user asks.
+ * Call it in the click's handler, as allowSite.
+ */
+export function askToRead(origin: string): Promise<boolean | Error> {
+  return allowSite(origin).catch((err: unknown) => {
+    console.error('Could not ask Chrome for access to the site', err)
+    return new Error(
+      'Chrome could not request access to the site, so nothing was read. ' +
+        'The user can ask again. Do not request access again unless the user asks.',
+      { cause: err },
+    )
+  })
+}
+
 const pdf = (where: TabWhere, product: string) =>
   `${cap(where)} shows a PDF in Chrome's viewer, which ${product} can't read.`
 

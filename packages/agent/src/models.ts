@@ -4,6 +4,8 @@
 // not encrypted, like the Clerk client token. The key goes only to its provider (own.ts), never to
 // the worker.
 import { OwnModel, OwnService, type OwnSetup } from './own'
+import { KEY_REJECTED } from './provider'
+import type { AnsweredBy } from './types'
 import { z } from './zod'
 
 /** Each provider as the panel names it. */
@@ -108,4 +110,17 @@ export function keyRejected(settings: ModelSettings, service: OwnService, key: s
   return service === 'openrouter' && openRouter?.key === key
     ? { ...settings, openRouter: { ...openRouter, rejectedAt: at } }
     : settings
+}
+
+/**
+ * The key a failed question marks as turned away, if any: only a `KEY_REJECTED` error from a user's
+ * own provider, and only the key the question was asked with, when it went to that same service.
+ */
+export function rejectedKey(
+  askedWith: OwnSetup | undefined,
+  result: { status: string; code?: string; model?: AnsweredBy },
+): OwnSetup | undefined {
+  const by = result.model
+  if (result.status !== 'error' || result.code !== KEY_REJECTED || !by || by.service === 'hosted') return undefined
+  return askedWith?.service === by.service ? askedWith : undefined
 }

@@ -1,11 +1,11 @@
 import {
   CopilotAgent,
-  KEY_REJECTED,
+  ToolPrompts,
   type AgentConfig,
   type AgentUpdate,
   type ConfirmationAnswer,
   type Compaction,
-  type ConfirmTool,
+  type ToolCallRequest,
   type HistoryMessage,
   type OwnSetup,
   type QuestionDetails,
@@ -14,7 +14,7 @@ import {
   type ToolDetails,
   type ToolStatus,
 } from '@cofun/agent'
-import { answering, type ModelSettings } from '@cofun/agent/models'
+import { answering, rejectedKey, type ModelSettings } from '@cofun/agent/models'
 import type { Mode } from '@cofun/agent/mode'
 import { track } from '../analytics'
 import type { AttachmentUpload } from '../confluence/attachments'
@@ -148,8 +148,8 @@ export class ChatSession {
   private readonly lifetime = new AbortController()
   /** The question being answered, if any: aborted by Stop. */
   private question?: AbortController
-  /** Answers for tool calls waiting for the user's OK, by call id. */
-  private readonly answers = new Map<string, (allow: ConfirmationAnswer) => void>()
+  /** The tool calls waiting for the user's OK. */
+  private readonly prompts = new ToolPrompts((call) => this.showPrompt(call))
   /** The session the chat is saved as: a saved one's, or a new one made by the first question. */
   private session?: SavedAs
   /** The model was asked for a title already, by this panel or the one that saved it (see `title`). */
@@ -268,56 +268,7 @@ export class ChatSession {
     let ended!: () => void
     this.ending = new Promise<void>((resolve) => (ended = resolve))
 
-    // Calls this question asked about, so their answers can be dropped when it ends.
-    const asked = new Map<string, (allow: ConfirmationAnswer) => void>()
-    const confirm: ConfirmTool = (call) =>
-      new Promise((resolve) => {
-        if (signal.aborted) return resolve(false)
-        // One answer per prompt: a double click, or Stop racing a click, must not touch a later
-        // prompt that reuses this id.
-        let answered = false
-        const answer = (allow: ConfirmationAnswer) => {
-          if (answered) return
-          answered = true
-          this.answers.delete(call.id)
-          // Running again until the agent reports how the call ended (done, or declined).
-          this.setToolStatus(call.id, 'running')
-          resolve(allow)
-        }
-        asked.set(call.id, answer)
-        this.answers.set(call.id, answer)
-        // Normally the call is already shown as running. If not, show it now: the agent must never
-        // wait on a prompt nobody can see. Show the arguments the tool will run with.
-        const { preview, question, access } = call
-        this.updateReply((m) => {
-          const j = newestOpenCall(m.parts, call.id)
-          const parts = [...m.parts]
-          const tool: ShownTool = {
-            id: call.id,
-            name: call.name,
-            args: call.args,
-            status: 'confirm',
-            result: '',
-            preview,
-            question,
-            access,
-          }
-          if (j < 0) parts.push({ type: 'tool', tool })
-          else
-            parts[j] = {
-              type: 'tool',
-              tool: {
-                ...(parts[j] as Extract<Part, { type: 'tool' }>).tool,
-                args: call.args,
-                status: 'confirm',
-                preview,
-                question,
-                access,
-              },
-            }
-          return { ...m, parts }
-        })
-      })
+    const prompts = this.prompts.question(signal)
 
     // Tool calls of this question that ended, however they did.
     let toolCalls = 0
@@ -376,7 +327,7 @@ export class ChatSession {
       const result = await this.agent.ask(
         q.text,
         onUpdate,
-        confirm,
+        prompts.confirm,
         { context, pages: q.pages, selections: q.selections, readOnly, chat: session.id },
         { signal },
       )
@@ -407,15 +358,13 @@ export class ChatSession {
       } else if (result.status === 'error') {
         this.updateReply((m) => ({ ...m, error: result.message, outOfCredits: result.code === 'out_of_credits' }))
         // The provider turned the user's key away: Settings marks it, until a check passes or a new key is saved.
-        const by = result.model
-        if (result.code === KEY_REJECTED && by && by.service !== 'hosted' && askedWith?.service === by.service)
-          this.panel.keyRejected(askedWith)
+        const rejected = rejectedKey(askedWith, result)
+        if (rejected) this.panel.keyRejected(rejected)
       } else if (result.status === 'step_limit')
         this.updateReply((m) => ({ ...m, note: `Stopped after ${result.steps} steps. Ask again to continue.` }))
     } finally {
       // A question can end without the user answering, e.g. when they left the chat.
-      // Only this question's own answers: the next question may reuse an id.
-      for (const [callId, answer] of asked) if (this.answers.get(callId) === answer) this.answers.delete(callId)
+      prompts.end()
       if (this.question === stop) this.question = undefined
       this.memory.confluenceQuestion = undefined
       this.panel.spent()
@@ -443,13 +392,13 @@ export class ChatSession {
   /** Stops the question being answered, if any: every prompt is answered with no. */
   stop(): void {
     if (this.snapshot.status !== 'ready') this.update({ status: 'stopping' })
-    this.declineAll()
+    this.prompts.declineAll()
     this.question?.abort()
   }
 
   /** Answers the prompt of the tool call `callId`, if it is still waiting for the user. */
   answer(callId: string, allow: ConfirmationAnswer): void {
-    this.answers.get(callId)?.(allow)
+    this.prompts.answer(callId, allow)
   }
 
   /**
@@ -457,12 +406,47 @@ export class ChatSession {
    * stops it, and is saved to this chat once it has ended. Nothing more is asked in it.
    */
   leave(): void {
-    this.declineAll()
+    this.prompts.declineAll()
     this.lifetime.abort()
   }
 
-  private declineAll() {
-    for (const answer of this.answers.values()) answer(false)
+  /**
+   * Shows the call as waiting for the user's OK, and returns what shows it running again once it is
+   * answered, until the agent reports how it ended. Normally the call is already shown as running.
+   * If not, it is shown now: the agent must never wait on a prompt nobody can see. With the
+   * arguments the tool will run with.
+   */
+  private showPrompt(call: ToolCallRequest): () => void {
+    const { preview, question, access } = call
+    this.updateReply((m) => {
+      const j = newestOpenCall(m.parts, call.id)
+      const parts = [...m.parts]
+      const tool: ShownTool = {
+        id: call.id,
+        name: call.name,
+        args: call.args,
+        status: 'confirm',
+        result: '',
+        preview,
+        question,
+        access,
+      }
+      if (j < 0) parts.push({ type: 'tool', tool })
+      else
+        parts[j] = {
+          type: 'tool',
+          tool: {
+            ...(parts[j] as Extract<Part, { type: 'tool' }>).tool,
+            args: call.args,
+            status: 'confirm',
+            preview,
+            question,
+            access,
+          },
+        }
+      return { ...m, parts }
+    })
+    return () => this.setToolStatus(call.id, 'running')
   }
 
   private update(change: Partial<ChatSnapshot>) {

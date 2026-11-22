@@ -403,6 +403,42 @@ describe('reading the page in the current tab', () => {
     }
   })
 
+  it('[UC-WEBCO-PANEL-001-S12] Stop while the card asks answers no: nothing is read, and the call shows as stopped', async () => {
+    const { browser, user } = await openOn()
+    browser.ai.script.push(readTab, { reply: 'Never sent.' })
+
+    await ask(user, 'Summarize this article')
+    await screen.findByRole('group', { name: 'Allow Webco to read news.example.com?' })
+    await user.click(screen.getByRole('button', { name: 'Stop' }))
+
+    await answered()
+    expect(screen.queryByRole('group', { name: /Allow Webco to read/ })).toBeNull()
+    expect(screen.getByText('Stopped: read the current tab')).toBeVisible()
+    expect(browser.tab.accessRequests).toEqual([])
+    expect(browser.tab.injections).toEqual([])
+    // The question ended there: the model was not asked again.
+    expect(browser.ai.calls).toHaveLength(1)
+  })
+
+  it('[UC-WEBCO-PANEL-001-S12] leaving the chat while the card asks answers no, and nothing is read', async () => {
+    const { browser, user } = await openOn()
+    browser.ai.script.push(readTab, { reply: 'Never sent.' })
+
+    await ask(user, 'Summarize this article')
+    await screen.findByRole('group', { name: 'Allow Webco to read news.example.com?' })
+    await user.click(screen.getByRole('button', { name: 'New chat' }))
+
+    expect(screen.queryByRole('group', { name: /Allow Webco to read/ })).toBeNull()
+    // The new chat takes a question at once; the one left was not answered for it.
+    browser.ai.script.length = 0
+    browser.ai.script.push({ reply: 'Fresh.' })
+    await ask(user, 'Hello')
+    expect(await screen.findByText('Fresh.')).toBeVisible()
+    expect(browser.tab.accessRequests).toEqual([])
+    expect(browser.tab.injections).toEqual([])
+    expect(browser.ai.calls).toHaveLength(2)
+  })
+
   it('[UC-WEBCO-PANEL-001-S12] a tab the user leaves while asked is not read', async () => {
     const { browser, user } = await openOn()
     browser.ai.script.push(readTab, { reply: 'You moved on.' })
