@@ -72,7 +72,11 @@ function pageAt(memory: ToolMemory, tab: ConfluenceTab, at: PageTarget): PageRef
     return at
   }
   const linked = linkedPage(tab, at)
-  if (!linked) throw new Error('Use a link to a published page on the Confluence site in the current tab.')
+  if (!linked)
+    throw new Error(
+      'Confluco reads a page link only as …/pages/viewpage.action?pageId=<id> or …/spaces/<key>/pages/<id> on the ' +
+        'Confluence site in the current tab. For another form, find the page with search_pages and pass its reference.',
+    )
   return linked
 }
 

@@ -324,7 +324,7 @@ describe('create a published page', () => {
     browser.ai.script.push({ toolCalls: [call] }, { reply: 'No page created.' })
     await ask(user, command)
     expect(await screen.findByText('No page created.')).toBeVisible()
-    expect(modelResults(browser)).toContain('Use a link to a published page on the Confluence site in the current tab.')
+    expect(modelResults(browser)).toContain('find the page with search_pages and pass its reference')
     expect(browser.workspaceRequests).toEqual([])
   })
 })
