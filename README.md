@@ -18,7 +18,7 @@ Each extension is installed on its own and has its own setup guide.
 |---|---|---|
 | <img src="extensions/notico/icons/icon.svg" alt="" width="20" height="20" /> **[Notico](extensions/notico/README.md)** | Notion | Reads and edits your Notion pages with you: pages, databases, comments, search. It can also read the page you are on elsewhere. [Install from the Chrome Web Store](https://chromewebstore.google.com/detail/notico-ai-copilot-for-not/moblfnjjebknafkgoifncombfnbfghom) |
 | <img src="extensions/confluco/icons/icon.svg" alt="" width="20" height="20" /> **[Confluco](extensions/confluco/README.md)** | Confluence | Reads, searches, and updates your Confluence pages, on Confluence Cloud and self-managed Confluence. It can also read the page you are on elsewhere. [Install from the Chrome Web Store](https://chromewebstore.google.com/detail/eolgkcpoohaeaedpcnljkldkpnjcdemm) |
-| <img src="extensions/webco/icons/icon.svg" alt="" width="20" height="20" /> **[Webco](extensions/webco/README.md)** | Any web page | Gets you answers from any web page: summarizes and explains it, compares it with your other tabs, and checks it against the web. It changes nothing on any site. [Install from the Chrome Web Store](https://chromewebstore.google.com/detail/ohopjjnpfepkmkcfccaondkhggegbfeh) |
+| <img src="extensions/webco/icons/icon.svg" alt="" width="20" height="20" /> **[Webco](extensions/webco/README.md)** | Any web page | Gets you answers from any web page: summarizes and explains it, compares it with your other tabs, and checks it against the web. It changes nothing on any site. [cofun.cc/webco](https://cofun.cc/webco) |
 
 ## One account for all of them
 
