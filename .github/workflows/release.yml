@@ -14,6 +14,7 @@ on:
         options:
           - notico
           - confluco
+          - webco
       version:
         description: Version for the manifest, e.g. 0.2.0 (1 to 4 dot-separated integers, higher than the store's last)
         type: string

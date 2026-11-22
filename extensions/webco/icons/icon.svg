@@ -2,7 +2,7 @@
   Webco's icon, in the Cofun family design: a white page with a docked panel on the right.
   The page carries Webco's pattern (an address bar and two text rows, any web page); the teal panel
   carries the white Cofun mark (an open ring with a dot just outside its gap).
-  Export the manifest's PNG sizes with `pnpm --filter webco-extension icons`.
+  Export the manifest's PNG sizes with `pnpm icons` in this folder (an XML comment can't hold a double hyphen).
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
   <rect x="8" y="16" width="112" height="96" rx="20" fill="#fff" />
