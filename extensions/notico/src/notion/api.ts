@@ -14,7 +14,6 @@ export const NOTION_ERROR_CODES = [
   'notion_error',
   'outcome_unknown',
   'rate_limited',
-  'over_budget',
 ] as const
 export type NotionErrorCode = (typeof NOTION_ERROR_CODES)[number]
 
@@ -97,29 +96,14 @@ export function coolingStop(ms: number): string {
   return `Notion turned requests away a moment ago, so Notico is waiting before it sends more. Ask again in ${waitText(ms)}.`
 }
 
-/** Notion requests a question may make before the user is asked whether to go on, and how many more each yes allows. */
-export const REQUEST_BUDGET = 100
-/** For the model: the request was held at the budget, and the user chose to stop. */
-export const OVER_BUDGET =
-  'Not sent: this question reached its budget of Notion requests, and the user chose to stop. Do not work around the budget, ' +
-  'for example with fewer or smaller requests; tell the user what was done so far instead.'
 /** For the user, before what failed, when Notion fails in a way that isn't understood. */
 export const UNEXPECTED_STOP = "Stopped after a Notion failure Notico doesn't understand:"
 /** For the user, when Notion doesn't say whether a change was saved. */
 export const UNKNOWN_STOP = 'Stopped: Notion did not say whether a change was saved.'
-/** For the user, when they stop a question at its budget. */
-export const BUDGET_STOP = 'Stopped: this question reached its budget of Notion requests.'
-
-/** What the user is asked when a question reaches its budget. */
-export function budgetQuestion(requests: number): string {
-  return `This question has made ${requests} Notion requests. Continue?`
-}
-
 /**
  * The Notion requests of one question, across all its tool calls: how many were sent, and whether
- * one could have changed the user's data. Once the question has made `REQUEST_BUDGET` requests, the
- * next one waits until the user is asked whether to go on (`ask`); a yes allows as many again, and a
- * no (or nobody to ask) stops the question, with nothing more sent.
+ * one could have changed the user's data. A question is bounded by the agent's caps on model turns
+ * and failed calls, and by Notion turning requests away, not by a count of requests.
  */
 export class NotionUsage {
   /** Requests that went out, or may have: failed ones included, not those known never to have left. */
@@ -128,36 +112,6 @@ export class NotionUsage {
   wrote = false
   /** The people of each workspace (see workspacePeople), loaded once per question, by workspace id. */
   readonly people = new Map<string, Promise<{ id: string; name: string }[] | null>>()
-  private budget = REQUEST_BUDGET
-  private stopped = false
-  /** The question to the user while one is open; requests sent meanwhile wait for the same answer. */
-  private asking?: Promise<void>
-
-  constructor(private readonly ask?: (question: string) => Promise<boolean>) {}
-
-  /** Waits until another request may be sent, and counts it; throws when the user stopped at the budget. */
-  async admit(): Promise<void> {
-    while (!this.stopped && this.requests >= this.budget) await (this.asking ??= this.askToContinue())
-    if (this.stopped) throw new NotionError('over_budget', OVER_BUDGET, { stopsQuestion: BUDGET_STOP })
-    this.requests++
-  }
-
-  /** Takes back a request admitted but known never to have left (say, Chrome refused to run it). */
-  unsent(): void {
-    this.requests--
-  }
-
-  private async askToContinue(): Promise<void> {
-    let yes = false
-    try {
-      yes = (await this.ask?.(budgetQuestion(this.requests))) === true
-    } catch (err) {
-      console.error('Could not ask whether to continue', err)
-    }
-    if (yes) this.budget = this.requests + REQUEST_BUDGET
-    else this.stopped = true
-    this.asking = undefined
-  }
 }
 
 /** The endpoints under /api/v3/ the client uses. */
@@ -953,7 +907,7 @@ export class NotionClient {
    * Every request to Notion goes through here. `spaceId`, when known, goes along as
    * `x-notion-space-id`. When Notion turns a request away for coming too fast, nothing is retried:
    * the client sends nothing more, and the question stops (see AGENTS.md, calling outside services). Each
-   * request sent counts toward the question's usage, and may first wait for the user at its budget.
+   * request sent counts toward the question's usage.
    */
   private async request(
     endpoint: NotionEndpoint,
@@ -961,22 +915,16 @@ export class NotionClient {
     spaceId?: string,
   ): Promise<{ json: Record<string, unknown>; userId?: string }> {
     this.checkNotLimited()
-    await this.usage?.admit()
-    // Notion may have turned another request away while this one waited for the user: not sent, so not counted.
-    try {
-      this.checkNotLimited()
-    } catch (err) {
-      this.usage?.unsent()
-      throw err
-    }
+    if (this.usage) this.usage.requests++
     const write = WRITES.has(endpoint)
     let res: NotionResponse
     try {
       res = await this.send(endpoint, body, { spaceId })
     } catch (err) {
       // The transport says when nothing went out; otherwise the request, and a write, may have reached Notion.
-      if (err instanceof NotionError && !err.unanswered) this.usage?.unsent()
-      else if (write && this.usage) this.usage.wrote = true
+      if (err instanceof NotionError && !err.unanswered) {
+        if (this.usage) this.usage.requests--
+      } else if (write && this.usage) this.usage.wrote = true
       throw err
     }
     if (res.userId) this.userId = res.userId

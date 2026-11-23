@@ -438,8 +438,7 @@ export class CopilotAgent<M = unknown> {
     let running: ToolCallRequest | undefined
     // Why the question stopped, when it stopped in a call's preview rather than in a tool's run.
     let previewStop: string | undefined
-    // A question the running call puts to the user, on its card: the meter's at the request budget,
-    // or the tool's own (see ToolSpec.run).
+    // A question the running call puts to the user, on its card: the tool's own (see ToolSpec.run).
     const askOnCard: AskOnCard = async ({ text, access }) => {
       const call = running
       if (!call || epoch !== this.epoch) return false
@@ -450,7 +449,7 @@ export class CopilotAgent<M = unknown> {
       return answer === 'allow' && epoch === this.epoch
     }
     this.askOnCard = askOnCard
-    const meter = this.config.meter?.((text) => askOnCard({ text }))
+    const meter = this.config.meter?.()
 
     // On the last step, refuse the tools the model asks for instead of running them: the question
     // ends here, so the model would never see their results, and a tool could change a page.
@@ -481,8 +480,8 @@ export class CopilotAgent<M = unknown> {
           terminate: true,
         }
       }
-      // Running from here on: a preview's lookups count toward the question, so at its request budget
-      // they ask the user on this call's card.
+      // Running from here on: a preview's lookups count toward the question, and what it asks the user
+      // goes on this call's card.
       running = { id: toolCall.id, name: toolCall.name, args }
       // From the arguments the tool runs with, and before it runs: the run may change what the preview reads.
       const tool = this.tools.get(toolCall.name)
