@@ -30,10 +30,10 @@ let usage: NotionUsage | undefined
 /**
  * Starts counting the Notion requests of a new question: every client made from now on counts
  * toward it. A client keeps the question it was made in, so a tool still running from an earlier
- * question never counts toward the next one. `ask` asks the user whether to go on at the budget.
+ * question never counts toward the next one.
  */
-export function countNotionRequests(ask?: (question: string) => Promise<boolean>): NotionUsage {
-  return (usage = new NotionUsage(ask))
+export function countNotionRequests(): NotionUsage {
+  return (usage = new NotionUsage())
 }
 
 /**

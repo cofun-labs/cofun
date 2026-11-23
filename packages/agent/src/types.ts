@@ -32,12 +32,8 @@ export interface AgentConfig<M = unknown> {
    * Without it, a long result is clipped.
    */
   results?: ResultStore
-  /**
-   * Called as each question starts, to count the requests its tools make to the user's data (to
-   * the site). `ask` puts a yes/no question to the user on the card of the tool that is running, and
-   * resolves false when the question is stopped or nobody can be asked.
-   */
-  meter?: (ask: (question: string) => Promise<boolean>) => QuestionMeter
+  /** Called as each question starts, to count the requests its tools make to the user's data (to the site). */
+  meter?: () => QuestionMeter
 }
 
 /**
@@ -288,8 +284,8 @@ export interface ToolCallRequest {
   /** What the call would change, in words, when the tool can say. */
   preview?: string
   /**
-   * Set when the call is already running and asks the user this instead, such as whether to go on
-   * at the question's request budget; resolves true for yes.
+   * Set when the call is already running and asks the user this instead, such as whether to let the
+   * extension read a site; resolves true for yes.
    */
   question?: string
   /** With `question`: the origin the call asks to read (see CardQuestion). */

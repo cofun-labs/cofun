@@ -1,6 +1,6 @@
 // Notico's use of the agent loop (@cofun/agent) against the real worker, with the model behind it scripted: when
 // tools ask first, a question stopped after a change, what a conversation carries over, and the Notion
-// request budget. The loop's own rules are in packages/agent/test/loop.test.ts, and what the agent and
+// requests a question counts. The loop's own rules are in packages/agent/test/loop.test.ts, and what the agent and
 // the worker must agree on is in worker/test/extension.test.ts.
 import { WorkerClient, WorkerError } from '@cofun/worker-client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -18,15 +18,7 @@ import {
   type ToolCallRequest,
   type ToolSpec as SpecOf,
 } from '@cofun/agent'
-import {
-  BUDGET_STOP,
-  LIMITED_STOP,
-  coolingStop,
-  OVER_BUDGET,
-  RATE_LIMITED,
-  REQUEST_BUDGET,
-  budgetQuestion,
-} from '../src/notion/api'
+import { LIMITED_STOP, coolingStop, RATE_LIMITED } from '../src/notion/api'
 import { activeNotionTab, countNotionRequests, notionCooldown } from '../src/notion/tab'
 import { defineTool } from '../src/tool'
 import { carryPages, currentNotionPage } from '../src/tools/current'
@@ -967,8 +959,8 @@ describe('Notion requests per question', () => {
     return tab.install()
   }
 
-  /** A tool that looks the open page up `times` times, one request after another (or all at once). */
-  function lookups(times: number, { parallel = false } = {}): ToolSpec {
+  /** A tool that looks the open page up `times` times, one request after another. */
+  function lookups(times: number): ToolSpec {
     return {
       name: 'look_up',
       description: 'Looks the open page up.',
@@ -976,8 +968,7 @@ describe('Notion requests per question', () => {
       run: async () => {
         const { client } = await activeNotionTab()
         const once = () => client.getRecords([{ table: 'block', id: PAGE }])
-        if (parallel) await Promise.all(Array.from({ length: times }, once))
-        else for (let i = 0; i < times; i++) await once()
+        for (let i = 0; i < times; i++) await once()
         return 'Looked up.'
       },
     }
@@ -1006,92 +997,6 @@ describe('Notion requests per question', () => {
     ])
     const resumed = makeAgent({ tools: [readPage], meter: countNotionRequests }, saved)
     expect(resumed.history()).toEqual(saved)
-  })
-
-  it('[UC-NOTICO-AGENT-001-S18] at the budget, the agent asks the user and sends nothing until they answer', async () => {
-    const tab = workspaceTab()
-    ai.script = [{ toolCalls: [LOOK_UP] }, { reply: 'Done.' }]
-    const asked: { call: ToolCallRequest; sent: number }[] = []
-    const { result, updates } = await ask(
-      makeAgent({ tools: [lookups(REQUEST_BUDGET + 5)], meter: countNotionRequests }),
-      'Look it up',
-      async (call) => {
-        asked.push({ call, sent: tab.sent.length })
-        return true
-      },
-    )
-    expect(asked).toEqual([
-      {
-        call: { id: 'chatcmpl-tool-0', name: 'look_up', args: {}, question: budgetQuestion(REQUEST_BUDGET) },
-        sent: REQUEST_BUDGET,
-      },
-    ])
-    expect(budgetQuestion(REQUEST_BUDGET)).toBe('This question has made 100 Notion requests. Continue?')
-    expect(result).toEqual({ status: 'done', requests: REQUEST_BUDGET + 5 })
-    expect(toolStatuses(updates)).toEqual(['done'])
-    expect(tab.sent).toHaveLength(REQUEST_BUDGET + 5)
-  })
-
-  it('[@no-uc:notion-safety] each yes allows as many requests again before the next question', async () => {
-    workspaceTab()
-    ai.script = [{ toolCalls: [LOOK_UP] }, { reply: 'Done.' }]
-    const asked: string[] = []
-    const { result } = await ask(
-      makeAgent({ tools: [lookups(2 * REQUEST_BUDGET + 1)], meter: countNotionRequests }),
-      'Look it up',
-      async (call) => (asked.push(call.question!), true),
-    )
-    expect(asked).toEqual([budgetQuestion(REQUEST_BUDGET), budgetQuestion(2 * REQUEST_BUDGET)])
-    expect(result).toEqual({ status: 'done', requests: 2 * REQUEST_BUDGET + 1 })
-  })
-
-  it('[@no-uc:notion-safety] requests sent at once wait for the one answer', async () => {
-    const tab = workspaceTab()
-    ai.script = [{ toolCalls: [LOOK_UP] }, { toolCalls: [LOOK_UP] }, { reply: 'Done.' }]
-    let asked = 0
-    const before: ToolSpec = { ...lookups(REQUEST_BUDGET - 2), name: 'look_up' }
-    const parallel = lookups(5, { parallel: true })
-    let runs = 0
-    const tool: ToolSpec = {
-      ...before,
-      run: (args, signal, context) => (runs++ === 0 ? before : parallel).run(args, signal, context),
-    }
-    let sentWhenAsked = 0
-    const { result } = await ask(makeAgent({ tools: [tool], meter: countNotionRequests }), 'Look it up', async () => {
-      asked++
-      sentWhenAsked = tab.sent.length
-      return true
-    })
-    // The two under the budget went out (they may still be on their way); the other three waited.
-    expect(asked).toBe(1)
-    expect(sentWhenAsked).toBeLessThanOrEqual(REQUEST_BUDGET)
-    expect(result).toEqual({ status: 'done', requests: REQUEST_BUDGET + 3 })
-    expect(tab.sent).toHaveLength(REQUEST_BUDGET + 3)
-  })
-
-  it('[UC-NOTICO-AGENT-001-S18] stopping at the budget sends nothing more, ends the question, and tells the AI not to work around it', async () => {
-    const tab = workspaceTab()
-    // The model would try again, with fewer requests.
-    ai.script = [{ toolCalls: [LOOK_UP] }, { toolCalls: [LOOK_UP] }, { reply: 'Trying another way.' }]
-    const agent = makeAgent({ tools: [lookups(REQUEST_BUDGET + 5)], meter: countNotionRequests })
-    const { result, updates } = await ask(agent, 'Look it up', async () => false)
-    expect(result).toEqual({ status: 'error', message: BUDGET_STOP, requests: REQUEST_BUDGET })
-    expect(toolStatuses(updates)).toEqual(['failed'])
-    expect(tab.sent).toHaveLength(REQUEST_BUDGET)
-    expect(ai.calls).toHaveLength(1)
-
-    // The next question starts with a fresh budget, and the AI knows why the last one stopped.
-    ai.script = [{ reply: 'Ok.' }]
-    expect((await ask(agent, 'What happened?')).result).toEqual({ status: 'done', requests: 0 })
-    expect(sentMessages(1).find((m) => m.role === 'tool')).toMatchObject({ content: OVER_BUDGET })
-  })
-
-  it('[@no-uc:notion-safety] at the budget with nobody to ask, the question stops', async () => {
-    const tab = workspaceTab()
-    ai.script = [{ toolCalls: [LOOK_UP] }]
-    const { result } = await ask(makeAgent({ tools: [lookups(REQUEST_BUDGET + 1)], meter: countNotionRequests }), 'Go')
-    expect(result).toEqual({ status: 'error', message: BUDGET_STOP, requests: REQUEST_BUDGET })
-    expect(tab.sent).toHaveLength(REQUEST_BUDGET)
   })
 
   it('[@no-uc:data] a write that was sent warns of changes even when its tool does not say it changes data', async () => {
